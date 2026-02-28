@@ -10,6 +10,25 @@ interface UseEventStreamResult {
   agentStatus: AgentStatus;
 }
 
+/** Default plan shown until the backend sends its own PlanUpdated event */
+const DEFAULT_PLAN_EVENT: AgentEvent = {
+  type: "PlanUpdated",
+  steps: [
+    {
+      id: "default-plan-1",
+      index: 0,
+      description: "获取天气",
+      status: "pending",
+    },
+    {
+      id: "default-plan-2",
+      index: 1,
+      description: "大模型发展趋势热点分析",
+      status: "pending",
+    },
+  ],
+};
+
 /**
  * Subscribes to the Tauri event bus for agent events.
  * Falls back to stub data in browser/dev mode when Tauri is unavailable.
@@ -17,7 +36,7 @@ interface UseEventStreamResult {
 export function useEventStream(
   options: UseEventStreamOptions = {}
 ): UseEventStreamResult {
-  const [events, setEvents] = useState<AgentEvent[]>([]);
+  const [events, setEvents] = useState<AgentEvent[]>([DEFAULT_PLAN_EVENT]);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("Idle");
 
   // Keep the callback in a ref so it never causes pushEvent to be recreated.
