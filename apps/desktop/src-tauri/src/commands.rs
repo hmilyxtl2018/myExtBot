@@ -52,6 +52,7 @@ pub fn approve_tool_call(
     call_id: String,
     cache_session: bool,
     tool: String,
+    params: serde_json::Value,
     agent: State<'_, AgentState>,
     perms: State<'_, PermissionManager>,
     db: State<'_, AuditDb>,
@@ -59,7 +60,8 @@ pub fn approve_tool_call(
     if cache_session {
         perms.grant_session(&tool);
     }
-    db.log_tool_call(&call_id, agent.session_id(), &tool, "{}", true)
+    let params_json = serde_json::to_string(&params).unwrap_or_else(|_| "{}".into());
+    db.log_tool_call(&call_id, agent.session_id(), &tool, &params_json, true)
         .map_err(|e| e.to_string())?;
     agent
         .transition(crate::events::AgentStatus::RunningTool)
@@ -72,10 +74,12 @@ pub fn approve_tool_call(
 pub fn deny_tool_call(
     call_id: String,
     tool: String,
+    params: serde_json::Value,
     agent: State<'_, AgentState>,
     db: State<'_, AuditDb>,
 ) -> Result<(), String> {
-    db.log_tool_call(&call_id, agent.session_id(), &tool, "{}", false)
+    let params_json = serde_json::to_string(&params).unwrap_or_else(|_| "{}".into());
+    db.log_tool_call(&call_id, agent.session_id(), &tool, &params_json, false)
         .map_err(|e| e.to_string())?;
     agent
         .transition(crate::events::AgentStatus::Idle)

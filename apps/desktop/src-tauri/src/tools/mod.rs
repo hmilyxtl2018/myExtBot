@@ -56,17 +56,16 @@ impl ToolRegistry {
             .ok_or_else(|| anyhow::anyhow!("Unknown tool: {tool}"))?;
         let compiled = jsonschema::JSONSchema::compile(&def.params_schema)
             .map_err(|e| anyhow::anyhow!("Schema compile error: {e}"))?;
-        let is_valid = compiled.is_valid(params);
-        if is_valid {
-            Ok(())
-        } else {
-            let msg: Vec<String> = compiled
-                .validate(params)
-                .err()
-                .map(|errors| errors.map(|e| e.to_string()).collect())
-                .unwrap_or_default();
-            Err(anyhow::anyhow!("Param validation failed: {}", msg.join("; ")))
+        if compiled.is_valid(params) {
+            return Ok(());
         }
+        // Eagerly collect errors before `compiled` is dropped.
+        let msg: Vec<String> = compiled
+            .validate(params)
+            .err()
+            .map(|errors| errors.map(|e| e.to_string()).collect())
+            .unwrap_or_default();
+        Err(anyhow::anyhow!("Param validation failed: {}", msg.join("; ")))
     }
 
     pub fn list_names(&self) -> Vec<&'static str> {

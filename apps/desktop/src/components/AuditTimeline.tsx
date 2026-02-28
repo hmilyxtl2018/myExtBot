@@ -4,6 +4,22 @@ interface Props {
   events: AgentEvent[];
 }
 
+/** Extract a display timestamp string from an event, if available. */
+function eventTimestamp(event: AgentEvent): string {
+  switch (event.type) {
+    case "ChatMessage":
+      return event.message.timestamp;
+    case "ToolCallRequest":
+      return event.request.timestamp;
+    case "ToolCallResult":
+      return event.result.timestamp;
+    case "AuditEntry":
+      return event.entry.timestamp;
+    default:
+      return "";
+  }
+}
+
 export default function AuditTimeline({ events }: Props) {
   return (
     <div className="audit-timeline">
@@ -12,11 +28,7 @@ export default function AuditTimeline({ events }: Props) {
         {events.map((event, idx) => (
           <li key={idx} className="audit-item">
             <span className="audit-type">{event.type}</span>
-            <span className="audit-time">
-              {"timestamp" in event
-                ? String((event as Record<string, unknown>).timestamp ?? "")
-                : ""}
-            </span>
+            <span className="audit-time">{eventTimestamp(event)}</span>
           </li>
         ))}
         {events.length === 0 && (

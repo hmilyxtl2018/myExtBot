@@ -5,7 +5,7 @@ import AuditTimeline from "./components/AuditTimeline";
 import ApprovalModal from "./components/ApprovalModal";
 import EmergencyStop from "./components/EmergencyStop";
 import { useEventStream } from "./hooks/useEventStream";
-import type { AgentEvent, ToolCallRequest } from "./models/events";
+import type { ToolCallRequest } from "./models/events";
 import "./App.css";
 
 export default function App() {
@@ -14,13 +14,32 @@ export default function App() {
     onToolCallRequest: (req) => setPendingApproval(req),
   });
 
-  const handleApprove = (_req: ToolCallRequest) => {
-    // TODO: invoke Tauri command to approve tool call
+  const handleApprove = async (req: ToolCallRequest) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("approve_tool_call", {
+        callId: req.id,
+        cacheSession: false,
+        tool: req.tool,
+        params: req.params,
+      });
+    } catch {
+      console.warn("approve_tool_call invoked (stub)");
+    }
     setPendingApproval(null);
   };
 
-  const handleDeny = (_req: ToolCallRequest) => {
-    // TODO: invoke Tauri command to deny tool call
+  const handleDeny = async (req: ToolCallRequest) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("deny_tool_call", {
+        callId: req.id,
+        tool: req.tool,
+        params: req.params,
+      });
+    } catch {
+      console.warn("deny_tool_call invoked (stub)");
+    }
     setPendingApproval(null);
   };
 

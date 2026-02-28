@@ -5,7 +5,7 @@
   "description": "Playwright WebSocket JSON-RPC sidecar for myExtBot",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node --esm src/index.ts",
+    "dev": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
