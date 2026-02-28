@@ -54,13 +54,22 @@ export function useEventStream(
   // which intentionally mounts → unmounts → mounts again in development.
   const stubInjectedRef = useRef(false);
 
+  // Tracks whether we are replaying stub events (no Tauri back-end).
+  // In stub mode, ToolCallRequest events are shown in the log but must NOT
+  // open the approval modal because nobody can respond to it in demo/dev mode.
+  const stubModeRef = useRef(false);
+
   // Stable callback – no deps needed because callbacks are accessed via ref.
   const pushEvent = useCallback((event: AgentEvent) => {
     setEvents((prev) => [...prev, event]);
     if (event.type === "StatusChanged") {
       setAgentStatus(event.status);
     }
-    if (event.type === "ToolCallRequest" && onToolCallRequestRef.current) {
+    if (
+      event.type === "ToolCallRequest" &&
+      onToolCallRequestRef.current &&
+      !stubModeRef.current
+    ) {
       onToolCallRequestRef.current(event.request);
     }
   }, []); // intentionally no deps – stable for the lifetime of the component
@@ -82,6 +91,7 @@ export function useEventStream(
         // intentional double-mount in development.
         if (!stubInjectedRef.current) {
           stubInjectedRef.current = true;
+          stubModeRef.current = true;
           for (const [delay, event] of STUB_EVENTS) {
             setTimeout(() => pushEvent(event), delay);
           }
