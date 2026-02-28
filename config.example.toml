@@ -1,0 +1,39 @@
+# config.example.toml – copy to config.toml and fill in values.
+# Never commit config.toml; it may contain secrets.
+
+[llm]
+# OpenAI-compatible chat completion endpoint
+base_url = "https://api.openai.com/v1"
+# Set via environment variable: MYEXTBOT_LLM_API_KEY
+api_key_env = "MYEXTBOT_LLM_API_KEY"
+model = "gpt-4o"
+max_tokens = 4096
+
+[ocr]
+# OpenAI-compatible Vision endpoint (may be same as LLM or separate)
+base_url = "https://api.openai.com/v1"
+api_key_env = "MYEXTBOT_OCR_API_KEY"
+model = "gpt-4o"
+
+[sidecar]
+# Playwright sidecar WebSocket address
+ws_url = "ws://127.0.0.1:9001"
+
+[audit]
+# SQLite database path (relative to app data dir if not absolute)
+db_path = "audit.db"
+
+[permissions]
+# Session-scoped allow caching: "always", "once", or "never"
+default_approval = "once"
+
+# Tool-level allowlists (glob patterns for fs paths, command names, URLs)
+[permissions.fs]
+read_allow = ["**"]
+write_allow = []
+
+[permissions.cmd]
+allow = []        # e.g. ["git", "npm"]
+
+[permissions.net]
+allow = []        # e.g. ["https://api.openai.com/*"]
