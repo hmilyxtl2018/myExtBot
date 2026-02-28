@@ -5,8 +5,20 @@ interface Props {
   events: AgentEvent[];
 }
 
+const LOG_EVENT_TYPES = [
+  "AgentThinking",
+  "ToolCallRequest",
+  "ToolCallResult",
+  "StatusChanged",
+] as const;
+
+type LogEventType = (typeof LOG_EVENT_TYPES)[number];
+
+function isLogEvent(e: AgentEvent): e is Extract<AgentEvent, { type: LogEventType }> {
+  return LOG_EVENT_TYPES.includes(e.type as LogEventType);
+}
+
 function formatTime(ts: string): string {
-  if (!ts) return "";
   try {
     return new Date(ts).toLocaleTimeString("zh-CN", { hour12: false });
   } catch {
@@ -65,7 +77,7 @@ function renderEventItem(event: AgentEvent, idx: number) {
 
     case "StatusChanged":
       return (
-        <li key={`status-${idx}`} className="log-item log-item-status">
+        <li key={`status-${event.status}-${idx}`} className="log-item log-item-status">
           <span className="log-icon">📌</span>
           <div className="log-body">
             <span className={`log-status-badge log-status-${event.status}`}>{event.status}</span>
@@ -85,13 +97,7 @@ export default function AgentLogPanel({ events }: Props) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
-  const logEvents = events.filter(
-    (e) =>
-      e.type === "AgentThinking" ||
-      e.type === "ToolCallRequest" ||
-      e.type === "ToolCallResult" ||
-      e.type === "StatusChanged"
-  );
+  const logEvents = events.filter(isLogEvent);
 
   return (
     <div className="agent-log-panel">
