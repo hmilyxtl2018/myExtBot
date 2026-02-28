@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import ResultChart from "./ResultChart";
+import AuditTimeline from "./AuditTimeline";
 import type { AgentEvent } from "../models/events";
 
 interface Props {
@@ -27,6 +28,17 @@ function formatTime(ts: string): string {
     return ts;
   }
 }
+
+// Gap 8: Chinese status labels
+const STATUS_LABEL_CN: Record<string, string> = {
+  Idle:             "空闲",
+  Thinking:         "思考中",
+  WaitingApproval:  "等待审批",
+  RunningTool:      "执行中",
+  Stopped:          "已停止",
+  Completed:        "已完成",
+  Failed:           "失败",
+};
 
 function renderEventItem(event: AgentEvent, idx: number) {
   switch (event.type) {
@@ -91,7 +103,10 @@ function renderEventItem(event: AgentEvent, idx: number) {
         <li key={`status-${event.status}-${idx}`} className="log-item log-item-status">
           <Icon name="statusDot" size={8} className="log-icon" style={{ marginTop: 4 }} />
           <div className="log-body">
-            <span className={`log-status-badge log-status-${event.status}`}>{event.status}</span>
+            {/* Gap 8: show Chinese status label */}
+            <span className={`log-status-badge log-status-${event.status}`}>
+              {STATUS_LABEL_CN[event.status] ?? event.status}
+            </span>
           </div>
         </li>
       );
@@ -102,24 +117,47 @@ function renderEventItem(event: AgentEvent, idx: number) {
 }
 
 export default function AgentLogPanel({ events }: Props) {
+  // Gap 2: tab state — "log" or "audit"
+  const [activeTab, setActiveTab] = useState<"log" | "audit">("log");
   const bottomRef = useRef<HTMLLIElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events]);
 
   const logEvents = events.filter(isLogEvent);
 
+  useEffect(() => {
+    if (activeTab === "log") {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [events, activeTab]);
+
   return (
     <div className="agent-log-panel">
-      <h2 className="panel-title">运行日志</h2>
-      <ul className="log-list">
-        {logEvents.length === 0 && (
-          <li className="placeholder">等待 Agent 启动…</li>
-        )}
-        {logEvents.map((e, i) => renderEventItem(e, i))}
-        <li ref={bottomRef} />
-      </ul>
+      {/* Gap 2: tab navigation */}
+      <div className="panel-tabs">
+        <button
+          className={`panel-tab${activeTab === "log" ? " panel-tab-active" : ""}`}
+          onClick={() => setActiveTab("log")}
+        >
+          运行日志
+        </button>
+        <button
+          className={`panel-tab${activeTab === "audit" ? " panel-tab-active" : ""}`}
+          onClick={() => setActiveTab("audit")}
+        >
+          审计记录
+        </button>
+      </div>
+
+      {activeTab === "log" ? (
+        <ul className="log-list">
+          {logEvents.length === 0 && (
+            <li className="placeholder">等待 Agent 启动…</li>
+          )}
+          {logEvents.map((e, i) => renderEventItem(e, i))}
+          <li ref={bottomRef} />
+        </ul>
+      ) : (
+        <AuditTimeline events={events} />
+      )}
     </div>
   );
 }

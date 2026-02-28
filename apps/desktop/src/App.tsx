@@ -21,7 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function App() {
   const [pendingApproval, setPendingApproval] = useState<ToolCallRequest | null>(null);
-  const { events, agentStatus } = useEventStream({
+  const { events, agentStatus, sendMessage } = useEventStream({
     onToolCallRequest: (req) => setPendingApproval(req),
   });
 
@@ -80,7 +80,7 @@ export default function App() {
         </aside>
 
         <section className="panel panel-chat">
-          <ChatPanel events={events} />
+          <ChatPanel events={events} agentStatus={agentStatus} onSend={sendMessage} />
         </section>
 
         <aside className="panel panel-log">

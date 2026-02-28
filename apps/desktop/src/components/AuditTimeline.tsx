@@ -1,40 +1,53 @@
-import type { AgentEvent } from "../models/events";
+import Icon from "./Icon";
+import type { AgentEvent, AuditEntry } from "../models/events";
 
 interface Props {
   events: AgentEvent[];
 }
 
-/** Extract a display timestamp string from an event, if available. */
-function eventTimestamp(event: AgentEvent): string {
-  switch (event.type) {
-    case "ChatMessage":
-      return event.message.timestamp;
-    case "ToolCallRequest":
-      return event.request.timestamp;
-    case "ToolCallResult":
-      return event.result.timestamp;
-    case "AuditEntry":
-      return event.entry.timestamp;
-    default:
-      return "";
+const EVENT_TYPE_LABEL: Record<string, string> = {
+  "chat.message.sent":    "消息",
+  "tool.call.completed":  "工具",
+  "tool.call.approved":   "批准",
+  "tool.call.denied":     "拒绝",
+  "agent.status.changed": "状态",
+};
+
+function formatTime(ts: string): string {
+  try {
+    return new Date(ts).toLocaleTimeString("zh-CN", { hour12: false });
+  } catch {
+    return ts;
   }
 }
 
 export default function AuditTimeline({ events }: Props) {
+  const entries: AuditEntry[] = events
+    .filter((e): e is Extract<AgentEvent, { type: "AuditEntry" }> => e.type === "AuditEntry")
+    .map((e) => e.entry);
+
+  if (entries.length === 0) {
+    return <p className="placeholder">暂无审计记录…</p>;
+  }
+
   return (
-    <div className="audit-timeline">
-      <h2 className="panel-title">Audit</h2>
-      <ul className="audit-list">
-        {events.map((event, idx) => (
-          <li key={idx} className="audit-item">
-            <span className="audit-type">{event.type}</span>
-            <span className="audit-time">{eventTimestamp(event)}</span>
-          </li>
-        ))}
-        {events.length === 0 && (
-          <li className="placeholder">No events yet.</li>
-        )}
-      </ul>
-    </div>
+    <ul className="audit-list">
+      {entries.map((entry) => (
+        <li key={entry.id} className="audit-item">
+          <Icon name="schedule" size={12} className="audit-icon" />
+          <div className="audit-body">
+            <span className="audit-type-badge">
+              {EVENT_TYPE_LABEL[entry.event_type] ?? entry.event_type}
+            </span>
+            <span className="audit-payload">
+              {Object.entries(entry.payload as Record<string, unknown>)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join("  ·  ")}
+            </span>
+            <span className="audit-time">{formatTime(entry.timestamp)}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

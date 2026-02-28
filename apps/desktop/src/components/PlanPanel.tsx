@@ -54,6 +54,7 @@ export default function PlanPanel({ events }: Props) {
           {steps.map((step) => (
             <li key={step.id} className={`plan-step plan-step-${step.status}`}>
               <Icon name={STATUS_ICON[step.status]} size={14} className="plan-step-icon" />
+              <span className="plan-step-num">{step.index + 1}.</span>
               <span className="plan-step-desc">{step.description}</span>
             </li>
           ))}
