@@ -1,0 +1,22 @@
+{
+  "name": "myextbot-playwright-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright WebSocket JSON-RPC sidecar for myExtBot",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node --esm src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "playwright": "^1.44.1",
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.2",
+    "@types/ws": "^8.5.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
