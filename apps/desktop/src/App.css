@@ -952,3 +952,283 @@
   width: 14px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Right panel tab switcher ─────────────────────────────────────────── */
+.panel-right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.right-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 0;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.right-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.right-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* ── Graph panel ──────────────────────────────────────────────────────── */
+.graph-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.graph-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  flex-shrink: 0;
+}
+
+.graph-tab {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.graph-tab.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.graph-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Graph inspector ──────────────────────────────────────────────────── */
+.graph-inspector {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text);
+  max-width: 260px;
+  z-index: 10;
+}
+
+.inspector-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--primary);
+}
+
+.inspector-dl {
+  margin: 0 0 8px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+}
+
+.inspector-dl dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.inspector-dl dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inspector-dl pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 10px;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.inspector-close {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.graph-stub-badge {
+  position: absolute;
+  top: 40px;
+  left: 8px;
+  background: #f59e0b22;
+  border: 1px solid #f59e0b;
+  color: #f59e0b;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ── Verifier rule editor ─────────────────────────────────────────────── */
+.verifier-rule-editor {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  color: var(--text);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.field-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+}
+
+.field-input,
+.field-select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.field-input-sm {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 2px 6px;
+  width: 120px;
+}
+
+.radio-group,
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.radio-label,
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.check-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.check-type {
+  width: auto;
+}
+
+.inline-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.btn-add-check {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  color: var(--primary);
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-save {
+  background: var(--primary);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+
+.btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
