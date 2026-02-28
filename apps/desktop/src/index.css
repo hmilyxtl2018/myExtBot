@@ -1,3 +1,16 @@
+/* Primary: load from Google Fonts (cached after first use; swap ensures text stays visible during load) */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');
+
+/* Fallback: local copy (add NotoSansCJK-Regular.woff2 to public/fonts/ for offline use) */
+@font-face {
+  font-family: "Noto Sans SC";
+  src: local("Noto Sans CJK SC"),
+       local("NotoSansCJKsc-Regular"),
+       url('/fonts/NotoSansCJK-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root {
   --bg: #1a1a2e;
   --surface: #16213e;
@@ -8,7 +21,7 @@
   --border: #2a2a4a;
   --radius: 8px;
   --message-user-bg: #1a3a5c;
-  font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
+  font-family: "Noto Sans SC", "Noto Sans CJK SC", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--text);

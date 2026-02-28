@@ -28,3 +28,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Local fonts (large binary assets – add manually if needed)
+apps/desktop/public/fonts/
