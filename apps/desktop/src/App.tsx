@@ -4,6 +4,8 @@ import PlanPanel from "./components/PlanPanel";
 import AgentLogPanel from "./components/AgentLogPanel";
 import ApprovalModal from "./components/ApprovalModal";
 import EmergencyStop from "./components/EmergencyStop";
+import GraphPanel from "./components/GraphPanel";
+import ProfileDashboard from "./components/ProfileDashboard";
 import Icon from "./components/Icon";
 import { useEventStream } from "./hooks/useEventStream";
 import type { ToolCallRequest } from "./models/events";
@@ -19,8 +21,11 @@ const STATUS_LABEL: Record<string, string> = {
   Failed:           "执行失败",
 };
 
+type RightTab = "log" | "graph" | "profile";
+
 export default function App() {
   const [pendingApproval, setPendingApproval] = useState<ToolCallRequest | null>(null);
+  const [rightTab, setRightTab] = useState<RightTab>("log");
   const { events, agentStatus, sendMessage } = useEventStream({
     onToolCallRequest: (req) => setPendingApproval(req),
   });
@@ -83,8 +88,34 @@ export default function App() {
           <ChatPanel events={events} agentStatus={agentStatus} onSend={sendMessage} />
         </section>
 
-        <aside className="panel panel-log">
-          <AgentLogPanel events={events} />
+        <aside className="panel panel-log panel-right">
+          <div className="right-tabs">
+            <button
+              className={`right-tab${rightTab === "log" ? " active" : ""}`}
+              onClick={() => setRightTab("log")}
+            >
+              日志
+            </button>
+            <button
+              className={`right-tab${rightTab === "graph" ? " active" : ""}`}
+              onClick={() => setRightTab("graph")}
+            >
+              图谱
+            </button>
+            <button
+              className={`right-tab${rightTab === "profile" ? " active" : ""}`}
+              onClick={() => setRightTab("profile")}
+            >
+              分身
+            </button>
+          </div>
+          {rightTab === "log" ? (
+            <AgentLogPanel events={events} />
+          ) : rightTab === "graph" ? (
+            <GraphPanel events={events} />
+          ) : (
+            <ProfileDashboard events={events} />
+          )}
         </aside>
       </main>
 
@@ -98,3 +129,4 @@ export default function App() {
     </div>
   );
 }
+
