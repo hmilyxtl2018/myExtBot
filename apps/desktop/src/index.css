@@ -17,16 +17,25 @@
 }
 
 :root {
-  --bg: #1a1a2e;
-  --surface: #16213e;
-  --accent: #0f3460;
-  --highlight: #e94560;
-  --text: #eaeaea;
-  --text-muted: #888;
-  --border: #2a2a4a;
-  --radius: 8px;
-  --message-user-bg: #1a3a5c;
-  font-family: "Noto Sans SC", "Noto Sans CJK SC", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+  /* Google AI Studio dark palette */
+  --bg:              #131314;
+  --surface:         #1e1e20;
+  --surface-2:       #28282b;
+  --accent:          #28282b;
+  --primary:         #a8c7fa;
+  --primary-dim:     rgba(168,199,250,0.12);
+  --highlight:       #f28b82;
+  --text:            #e8eaed;
+  --text-muted:      #9aa0a6;
+  --text-dim:        #5f6368;
+  --border:          rgba(255,255,255,0.08);
+  --radius:          8px;
+  --message-user-bg: #1a3260;
+  --success:         #81c995;
+  --warning:         #fdd663;
+  --error:           #f28b82;
+  --info:            #a8c7fa;
+  font-family: "Google Sans", Roboto, "Noto Sans SC", "Noto Sans CJK SC", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--text);

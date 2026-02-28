@@ -4,6 +4,7 @@ import PlanPanel from "./components/PlanPanel";
 import AgentLogPanel from "./components/AgentLogPanel";
 import ApprovalModal from "./components/ApprovalModal";
 import EmergencyStop from "./components/EmergencyStop";
+import Icon from "./components/Icon";
 import { useEventStream } from "./hooks/useEventStream";
 import type { ToolCallRequest } from "./models/events";
 import "./App.css";
@@ -56,7 +57,12 @@ export default function App() {
   return (
     <div className="app-layout">
       <header className="app-header">
-        <span className="app-title">myExtBot</span>
+        <div className="app-brand">
+          <Icon name="bolt" size={22} className="app-brand-icon" />
+          <span className="app-title">myExtBot</span>
+        </div>
+
+        <div className="header-spacer" />
 
         <div className="avatar-status" data-status={agentStatus}>
           <span className="avatar-status-dot" />

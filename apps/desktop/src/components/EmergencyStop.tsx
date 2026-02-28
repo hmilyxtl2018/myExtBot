@@ -1,3 +1,5 @@
+import Icon from "./Icon";
+
 export default function EmergencyStop() {
   const handleStop = async () => {
     try {
@@ -11,7 +13,8 @@ export default function EmergencyStop() {
 
   return (
     <button className="btn btn-emergency" onClick={handleStop} title="Emergency Stop">
-      ⏹ Stop
+      <Icon name="stop" size={14} />
+      Stop
     </button>
   );
 }

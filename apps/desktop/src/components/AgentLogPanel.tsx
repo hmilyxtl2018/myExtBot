@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import Icon from "./Icon";
+import ResultChart from "./ResultChart";
 import type { AgentEvent } from "../models/events";
 
 interface Props {
@@ -31,7 +33,7 @@ function renderEventItem(event: AgentEvent, idx: number) {
     case "AgentThinking":
       return (
         <li key={event.step.id} className="log-item log-item-thinking">
-          <span className="log-icon">🤔</span>
+          <Icon name="thinking" size={14} className="log-icon" />
           <div className="log-body">
             <span className="log-label">思维链</span>
             <p className="log-content">{event.step.content}</p>
@@ -43,10 +45,11 @@ function renderEventItem(event: AgentEvent, idx: number) {
     case "ToolCallRequest":
       return (
         <li key={event.request.id + "-req"} className="log-item log-item-tool-req">
-          <span className="log-icon">🔧</span>
+          <Icon name="build" size={14} className="log-icon" />
           <div className="log-body">
             <span className="log-label">
-              工具调用 <code className="tool-name">{event.request.tool}</code>
+              工具调用
+              <code className="tool-name">{event.request.tool}</code>
               <span className={`risk-badge risk-${event.request.risk}`}>{event.request.risk}</span>
             </span>
             <p className="log-content">{event.request.description}</p>
@@ -58,15 +61,23 @@ function renderEventItem(event: AgentEvent, idx: number) {
 
     case "ToolCallResult":
       return (
-        <li key={event.result.id + "-res"} className={`log-item log-item-tool-res log-item-tool-res-${event.result.success ? "ok" : "err"}`}>
-          <span className="log-icon">{event.result.success ? "✅" : "❌"}</span>
+        <li
+          key={event.result.id + "-res"}
+          className={`log-item log-item-tool-res log-item-tool-res-${event.result.success ? "ok" : "err"}`}
+        >
+          <Icon
+            name={event.result.success ? "checkCircle" : "cancel"}
+            size={14}
+            className="log-icon"
+          />
           <div className="log-body">
             <span className="log-label">
-              工具结果 <code className="tool-name">{event.result.tool}</code>
+              工具结果
+              <code className="tool-name">{event.result.tool}</code>
               <span className="log-duration">{event.result.duration_ms}ms</span>
             </span>
             {event.result.success ? (
-              <pre className="log-params">{JSON.stringify(event.result.output, null, 2)}</pre>
+              <ResultChart tool={event.result.tool} output={event.result.output} />
             ) : (
               <p className="log-error">{event.result.error}</p>
             )}
@@ -78,7 +89,7 @@ function renderEventItem(event: AgentEvent, idx: number) {
     case "StatusChanged":
       return (
         <li key={`status-${event.status}-${idx}`} className="log-item log-item-status">
-          <span className="log-icon">📌</span>
+          <Icon name="statusDot" size={8} className="log-icon" style={{ marginTop: 4 }} />
           <div className="log-body">
             <span className={`log-status-badge log-status-${event.status}`}>{event.status}</span>
           </div>
