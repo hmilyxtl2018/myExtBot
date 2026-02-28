@@ -8,6 +8,13 @@ export type AgentStatus =
   | "Completed"
   | "Failed";
 
+/** A chain-of-thought thinking step emitted by the agent */
+export interface ThinkingStep {
+  id: string;
+  content: string;
+  timestamp: string;
+}
+
 /** A tool call proposed by the agent, awaiting user approval */
 export interface ToolCallRequest {
   id: string;
@@ -55,6 +62,7 @@ export type AgentEvent =
   | { type: "ToolCallRequest"; request: ToolCallRequest }
   | { type: "ToolCallResult"; result: ToolCallResult }
   | { type: "AuditEntry"; entry: AuditEntry }
+  | { type: "AgentThinking"; step: ThinkingStep }
   | { type: "EmergencyStop" };
 
 /** An audit log entry */

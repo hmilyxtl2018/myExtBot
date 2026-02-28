@@ -1,12 +1,22 @@
 import { useState } from "react";
 import ChatPanel from "./components/ChatPanel";
 import PlanPanel from "./components/PlanPanel";
-import AuditTimeline from "./components/AuditTimeline";
+import AgentLogPanel from "./components/AgentLogPanel";
 import ApprovalModal from "./components/ApprovalModal";
 import EmergencyStop from "./components/EmergencyStop";
 import { useEventStream } from "./hooks/useEventStream";
 import type { ToolCallRequest } from "./models/events";
 import "./App.css";
+
+const STATUS_LABEL: Record<string, string> = {
+  Idle:             "空闲",
+  Thinking:         "思考中",
+  WaitingApproval:  "等待审批",
+  RunningTool:      "工具执行中",
+  Stopped:          "已停止",
+  Completed:        "已完成",
+  Failed:           "执行失败",
+};
 
 export default function App() {
   const [pendingApproval, setPendingApproval] = useState<ToolCallRequest | null>(null);
@@ -47,9 +57,14 @@ export default function App() {
     <div className="app-layout">
       <header className="app-header">
         <span className="app-title">myExtBot</span>
-        <span className="agent-status" data-status={agentStatus}>
-          {agentStatus}
-        </span>
+
+        <div className="avatar-status" data-status={agentStatus}>
+          <span className="avatar-status-dot" />
+          <span className="avatar-status-label">
+            数字分身：{STATUS_LABEL[agentStatus] ?? agentStatus}
+          </span>
+        </div>
+
         <EmergencyStop />
       </header>
 
@@ -62,8 +77,8 @@ export default function App() {
           <ChatPanel events={events} />
         </section>
 
-        <aside className="panel panel-audit">
-          <AuditTimeline events={events} />
+        <aside className="panel panel-log">
+          <AgentLogPanel events={events} />
         </aside>
       </main>
 
