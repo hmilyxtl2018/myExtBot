@@ -1,5 +1,7 @@
 //! Network fetch tool definition and placeholder.
 
+#![allow(dead_code)]
+
 use super::ToolDef;
 use anyhow::Result;
 use serde_json::{json, Value};

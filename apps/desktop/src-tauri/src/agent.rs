@@ -3,6 +3,8 @@
 //! States: Idle → Thinking → WaitingApproval → RunningTool → Completed/Failed
 //!         Any state → Stopped (emergency stop)
 
+#![allow(dead_code)]
+
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;

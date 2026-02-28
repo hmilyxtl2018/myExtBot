@@ -1,5 +1,7 @@
 //! Filesystem tool definitions and placeholder implementations.
 
+#![allow(dead_code)]
+
 use super::ToolDef;
 use anyhow::Result;
 use serde_json::{json, Value};

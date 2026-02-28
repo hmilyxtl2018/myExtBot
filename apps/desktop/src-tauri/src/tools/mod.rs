@@ -1,5 +1,7 @@
 //! Tool registry and JSON-schema validation framework.
 
+#![allow(dead_code)]
+
 pub mod cmd;
 pub mod desktop;
 pub mod fs;
