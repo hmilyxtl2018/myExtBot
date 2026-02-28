@@ -5,6 +5,7 @@ import AgentLogPanel from "./components/AgentLogPanel";
 import ApprovalModal from "./components/ApprovalModal";
 import EmergencyStop from "./components/EmergencyStop";
 import GraphPanel from "./components/GraphPanel";
+import ProfileDashboard from "./components/ProfileDashboard";
 import Icon from "./components/Icon";
 import { useEventStream } from "./hooks/useEventStream";
 import type { ToolCallRequest } from "./models/events";
@@ -20,7 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
   Failed:           "执行失败",
 };
 
-type RightTab = "log" | "graph";
+type RightTab = "log" | "graph" | "profile";
 
 export default function App() {
   const [pendingApproval, setPendingApproval] = useState<ToolCallRequest | null>(null);
@@ -101,11 +102,19 @@ export default function App() {
             >
               图谱
             </button>
+            <button
+              className={`right-tab${rightTab === "profile" ? " active" : ""}`}
+              onClick={() => setRightTab("profile")}
+            >
+              分身
+            </button>
           </div>
           {rightTab === "log" ? (
             <AgentLogPanel events={events} />
-          ) : (
+          ) : rightTab === "graph" ? (
             <GraphPanel events={events} />
+          ) : (
+            <ProfileDashboard events={events} />
           )}
         </aside>
       </main>
