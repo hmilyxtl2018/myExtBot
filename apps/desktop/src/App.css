@@ -50,3 +50,71 @@
 .panel-plan { width: 220px; flex-shrink: 0; }
 .panel-chat { flex: 1; }
 .panel-audit { width: 260px; flex-shrink: 0; }
+
+/* Panel title */
+.panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Chat messages */
+.messages { display: flex; flex-direction: column; gap: 8px; }
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--accent);
+}
+
+.message-user { background: var(--message-user-bg); }
+.message-assistant { background: var(--accent); }
+
+.message-role {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--highlight);
+}
+
+.message-content {
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* Plan steps */
+.plan-steps { padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
+
+.plan-step { font-size: 13px; padding: 2px 0; color: var(--text); }
+.plan-step-pending  { color: var(--text-muted); }
+.plan-step-running  { color: #f0c040; }
+.plan-step-done     { color: #60d060; text-decoration: line-through; }
+.plan-step-failed   { color: var(--highlight); }
+
+/* Audit timeline */
+.audit-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+
+.audit-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+.audit-type { color: #40c0f0; flex-shrink: 0; }
+.audit-time { color: var(--text-muted); font-size: 11px; text-align: right; }
+
+/* Placeholder text */
+.placeholder { color: var(--text-muted); font-size: 13px; font-style: italic; }
