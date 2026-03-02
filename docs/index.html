@@ -24,9 +24,17 @@
 
     <div class="header-spacer"></div>
 
+    <!-- Mode toggle: entry point selector -->
+    <div class="mode-switch" id="mode-switch" aria-label="Switch mode">
+      <button class="mode-btn active" data-mode="solo" title="Your personal bot — chat, files, commands">🤖 Solo Bot</button>
+      <button class="mode-btn"        data-mode="team" title="Multi-agent team collaboration">👥 Team</button>
+    </div>
+
+    <div class="mode-nav-divider" aria-hidden="true"></div>
+
     <nav class="nav-tabs">
-      <button class="nav-tab active" data-tab="chat">💬 Chat</button>
-      <button class="nav-tab"        data-tab="team">👥 Team</button>
+      <button class="nav-tab active" data-tab="chat"  data-mode-only="solo">💬 Chat</button>
+      <button class="nav-tab"        data-tab="team"  data-mode-only="team">🗂 Board</button>
       <button class="nav-tab"        data-tab="audit">📋 Audit</button>
     </nav>
 
@@ -91,6 +99,14 @@
           </div>
         </div>
 
+        <!-- Switch-to-Team nudge -->
+        <div class="sidebar-section mode-hint" id="hint-goto-team">
+          <button class="mode-hint-btn" id="btn-goto-team">
+            👥 Switch to Team Board →
+          </button>
+          <p class="mode-hint-desc">Delegate tasks to other agents &amp; track progress collaboratively.</p>
+        </div>
+
       </aside>
     </section><!-- /chat-view -->
 
@@ -99,6 +115,12 @@
          TEAM VIEW
          ================================================================ -->
     <section id="view-team" class="view team-view">
+
+      <!-- Back-to-solo hint bar -->
+      <div class="mode-crumb" id="hint-goto-solo">
+        <button class="mode-crumb-btn" id="btn-goto-solo">← Back to Solo Chat</button>
+        <span class="mode-crumb-label">Team collaboration mode — delegate tasks across your agent fleet</span>
+      </div>
 
       <!-- Agent chips bar -->
       <div class="team-top">

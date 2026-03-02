@@ -267,6 +267,27 @@ const State = {
 const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 
+// ── Mode switching (Solo Bot ↔ Team) ──────────────────────────────────────────
+
+function switchMode(mode) {
+  // Update mode-switch pill buttons
+  $$('.mode-btn').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.mode === mode)
+  );
+
+  // Show/hide mode-specific nav-tabs
+  $$('.nav-tab[data-mode-only]').forEach(tab => {
+    const hidden = tab.dataset.modeOnly !== mode;
+    tab.classList.toggle('mode-hidden', hidden);
+    if (hidden && tab.classList.contains('active')) {
+      tab.classList.remove('active');
+    }
+  });
+
+  // Jump to the default tab for this mode
+  switchTab(mode === 'team' ? 'team' : 'chat');
+}
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
 function switchTab(tab) {
@@ -744,6 +765,15 @@ function seedChat() {
 // ── Initialise ────────────────────────────────────────────────────────────────
 
 async function init() {
+  // Wire up mode toggle
+  $$('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+  });
+
+  // Cross-navigation hints
+  $('#btn-goto-team')?.addEventListener('click', () => switchMode('team'));
+  $('#btn-goto-solo')?.addEventListener('click', () => switchMode('solo'));
+
   // Wire up tabs
   $$('.nav-tab').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -788,8 +818,8 @@ async function init() {
     endpoint: null, team_id: State.teamId, is_local: true,
   });
 
-  // Activate default tab
-  switchTab('chat');
+  // Activate default mode (Solo Bot → Chat)
+  switchMode('solo');
 }
 
 document.addEventListener('DOMContentLoaded', init);
