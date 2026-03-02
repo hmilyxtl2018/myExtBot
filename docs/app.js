@@ -246,6 +246,216 @@ function makeBotReply(content) {
   return { text: "I'm on it! Let me think about the best approach for that request. In a real deployment I'd be calling the LLM API here — for the demo, try asking me to **read a file**, **run a command**, or check the **team** tab.", toolCall: null };
 }
 
+// ── Intel Watch — domain definitions ─────────────────────────────────────────
+
+const INTEL_DOMAINS = {
+  military: {
+    key: 'military',
+    label: '🎖 Military',
+    color: '#4f5bd5',
+    weeklySignals: [38, 42, 35, 48, 55, 51, 60, 63, 58, 72, 78, 74],
+    prev30d: 182,
+    curr30d: 226,
+    subTopics: ['Autonomous weapons', 'Cyber warfare', 'Space military', 'AI command systems', 'Defense procurement'],
+    trackingSince: '2024-03-01',
+  },
+  ai_tech: {
+    key: 'ai_tech',
+    label: '🤖 AI Technology',
+    color: '#6d5ef3',
+    weeklySignals: [58, 52, 68, 74, 82, 90, 78, 105, 98, 118, 135, 142],
+    prev30d: 311,
+    curr30d: 520,
+    subTopics: ['Large language models', 'Autonomous agents', 'AI regulation', 'AI safety', 'Hardware / chips'],
+    trackingSince: '2024-01-15',
+  },
+};
+
+/** Returns ISO timestamp offset by `hoursAgo` hours from now. */
+function tsAgo(hoursAgo) {
+  return new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+}
+
+const INTEL_SIGNALS = [
+  /* ── AI Technology ─────────────────────────────────────────────────────── */
+  { id:'is1',  domain:'ai_tech',  significance:'critical',
+    title:'DeepMind releases world model with autonomous multi-step planning',
+    summary:'Demonstrates unprecedented long-horizon task completion in open-ended environments without human-defined reward functions. Benchmark results exceed all prior published systems.',
+    keywords:['world model','autonomous planning','DeepMind'], source:'Nature', timestamp: tsAgo(2) },
+  { id:'is2',  domain:'ai_tech',  significance:'critical',
+    title:'GPT-5 achieves top-1% on SWE-bench with autonomous tool orchestration',
+    summary:'Full autonomous software-engineering capability now demonstrated. Implications for knowledge-work automation are significant; paired with code execution gives agent near-complete dev-loop closure.',
+    keywords:['GPT-5','SWE-bench','code generation','OpenAI'], source:'OpenAI Blog', timestamp: tsAgo(6) },
+  { id:'is3',  domain:'ai_tech',  significance:'high',
+    title:"Anthropic Claude 4 reaches 98.3% on MMLU — surpasses human expert baseline",
+    summary:'Sets a new record across 57 academic disciplines. Constitutional AI v3 training shows measurable alignment improvement alongside capability gains.',
+    keywords:['Anthropic','Claude 4','MMLU','alignment'], source:'Anthropic Research', timestamp: tsAgo(12) },
+  { id:'is4',  domain:'ai_tech',  significance:'high',
+    title:'EU AI Act enforcement phase 1 begins — 47 foundation model providers file compliance reports',
+    summary:'Compliance costs estimated at €12–18M average per provider. Open-source exemptions still under legal debate; SME impact assessment ongoing.',
+    keywords:['EU AI Act','regulation','compliance','GPAI'], source:'EU Commission', timestamp: tsAgo(30) },
+  { id:'is5',  domain:'ai_tech',  significance:'medium',
+    title:'Stanford AI Index 2025: inference compute cost drops 68% year-over-year',
+    summary:'Rapidly falling costs accelerate deployment across healthcare, legal, and education. Regulatory readiness gap widens as capabilities expand faster than governance frameworks.',
+    keywords:['compute cost','inference','Stanford AI Index','trends'], source:'Stanford HAI', timestamp: tsAgo(48) },
+  { id:'is6',  domain:'ai_tech',  significance:'medium',
+    title:'Google integrates Gemini Ultra into Android — 1.2 B device rollout begins',
+    summary:'On-device 7B parameter inference with privacy-preserving local context; first at-scale deployment of multimodal AI in consumer OS.',
+    keywords:['Gemini','Android','on-device','Google'], source:'Google Blog', timestamp: tsAgo(96) },
+  { id:'is7',  domain:'ai_tech',  significance:'low',
+    title:'Hugging Face passes 1 million public model repositories',
+    summary:'Open-source AI ecosystem growth accelerates; average model download rate up 340% vs 2023. Consolidation visible — top 50 repos account for 78% of downloads.',
+    keywords:['Hugging Face','open source','model hub','ecosystem'], source:'Hugging Face Blog', timestamp: tsAgo(120) },
+
+  /* ── Military ──────────────────────────────────────────────────────────── */
+  { id:'is8',  domain:'military', significance:'critical',
+    title:'Pentagon releases doctrine for AI-assisted autonomous battlefield decisions',
+    summary:'First formal US military doctrine authorising AI systems to recommend fire solutions in low-latency contested environments. Allies briefed; international law community divided.',
+    keywords:['Pentagon','autonomous weapons','AI doctrine','DoD'], source:'DoD Press', timestamp: tsAgo(1) },
+  { id:'is9',  domain:'military', significance:'high',
+    title:'NATO Project Diana selects 12 dual-use AI startups for battlefield integration pilots',
+    summary:'Selected companies focus on ISR data fusion, logistics optimisation, and AI-driven comms resilience across degraded-spectrum environments.',
+    keywords:['NATO','dual-use AI','battlefield','Project Diana'], source:'NATO HQ', timestamp: tsAgo(4) },
+  { id:'is10', domain:'military', significance:'high',
+    title:'China unveils AI-guided counter-hypersonic intercept layer in PLA Air Defense',
+    summary:'Satellite imagery and official statements confirm deployment of AI targeting in next-gen surface-to-air systems. Intercept window reportedly cut from 9s to 4s.',
+    keywords:['China','PLA','hypersonic','AI air defense'], source:'SCMP', timestamp: tsAgo(8) },
+  { id:'is11', domain:'military', significance:'medium',
+    title:'US Space Force awards $2.1B contract for AI-enhanced orbital surveillance mesh',
+    summary:'System integrates ML anomaly detection across 4,000+ tracked objects to provide real-time debris and threat assessment. Launch window: 18 months.',
+    keywords:['Space Force','orbital surveillance','AI','satellite'], source:'Defense News', timestamp: tsAgo(50) },
+  { id:'is12', domain:'military', significance:'medium',
+    title:'South Korea deploys AI border patrol drones along DMZ — autonomous mode pending approval',
+    summary:'Drones use computer vision and acoustic sensors. Human-in-the-loop approval still required for any kinetic action; OSCE observers on-site.',
+    keywords:['South Korea','DMZ','autonomous drones','border'], source:'Reuters', timestamp: tsAgo(72) },
+  { id:'is13', domain:'military', significance:'low',
+    title:'Israel trials AI-powered logistics optimisation in IDF supply chain',
+    summary:'Pilot reduces supply-chain latency by 31% and human coordination errors by 44% in controlled trials. Full deployment decision expected Q3.',
+    keywords:['IDF','logistics AI','supply chain','Israel'], source:'Haaretz', timestamp: tsAgo(144) },
+];
+
+// ── Intel Watch — rendering ───────────────────────────────────────────────────
+
+/**
+ * Generates an inline SVG area-line sparkline.
+ * @param {number[]} data   Array of numeric values (≥ 2 elements)
+ * @param {number}   width  SVG width in px
+ * @param {number}   height SVG height in px
+ * @param {string}   color  Stroke / fill colour
+ */
+function svgSparkline(data, width, height, color) {
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const step  = width / (data.length - 1);
+  const pts   = data.map((v, i) => {
+    const x = +(i * step).toFixed(1);
+    const y = +(height - 4 - ((v - min) / range) * (height - 8)).toFixed(1);
+    return `${x},${y}`;
+  });
+  const line = pts.join(' ');
+  const area = `0,${height} ${line} ${width},${height}`;
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">` +
+    `<polygon points="${area}" fill="${color}" fill-opacity="0.14"/>` +
+    `<polyline points="${line}" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>` +
+    `</svg>`;
+}
+
+function renderDomainCards() {
+  const idMap = { military: 'domain-card-military', ai_tech: 'domain-card-ai-tech' };
+  Object.values(INTEL_DOMAINS).forEach(d => {
+    const el = $(`#${idMap[d.key]}`);
+    if (!el) return;
+    const pct      = Math.round((d.curr30d / d.prev30d - 1) * 100);
+    const dir      = pct >= 5 ? '↑' : pct <= -5 ? '↓' : '→';
+    const trendCls = pct >= 5 ? 'up' : pct <= -5 ? 'down' : 'flat';
+    const sparkSvg = svgSparkline(d.weeklySignals, 190, 46, d.color);
+    const critCount = INTEL_SIGNALS.filter(s => s.domain === d.key && s.significance === 'critical').length;
+    const highCount = INTEL_SIGNALS.filter(s => s.domain === d.key && s.significance === 'high').length;
+    const velocity  = (d.curr30d / 30).toFixed(1);
+    const since     = new Date(d.trackingSince).toLocaleDateString(undefined, { year:'numeric', month:'short' });
+    el.innerHTML = `
+      <div class="domain-card-header">
+        <span class="domain-label">${d.label}</span>
+        <span class="domain-trend ${trendCls}">${dir} ${Math.abs(pct)}%</span>
+      </div>
+      <div class="domain-sparkline">${sparkSvg}
+        <div class="domain-sparkline-caption">12-week signal trend</div>
+      </div>
+      <div class="domain-stats">
+        <div class="domain-stat">
+          <span class="domain-stat-val">${d.curr30d}</span>
+          <span class="domain-stat-key">signals (30d)</span>
+        </div>
+        <div class="domain-stat">
+          <span class="domain-stat-val">${velocity}</span>
+          <span class="domain-stat-key">signals / day</span>
+        </div>
+        <div class="domain-stat">
+          <span class="domain-stat-val" style="color:var(--red)">${critCount}</span>
+          <span class="domain-stat-key">critical</span>
+        </div>
+        <div class="domain-stat">
+          <span class="domain-stat-val" style="color:var(--orange)">${highCount}</span>
+          <span class="domain-stat-key">high</span>
+        </div>
+      </div>
+      <div class="domain-subtopics">${d.subTopics.map(t => `<span class="domain-topic-pill">${escHtml(t)}</span>`).join('')}</div>
+      <div class="domain-tracking-since">🗓 Tracking since ${since}</div>`;
+  });
+}
+
+function renderSignalFeed(domainFilter, sigFilter) {
+  const list = $('#intel-signal-list');
+  if (!list) return;
+  domainFilter = domainFilter || 'all';
+  sigFilter    = sigFilter    || 'all';
+
+  let signals = INTEL_SIGNALS;
+  if (domainFilter !== 'all') signals = signals.filter(s => s.domain === domainFilter);
+  if (sigFilter    !== 'all') signals = signals.filter(s => s.significance === sigFilter);
+
+  if (!signals.length) {
+    list.innerHTML = '<div class="empty-state"><span class="empty-icon">🔍</span><p>No signals match the current filters.</p></div>';
+    return;
+  }
+
+  const domLbl = { military:'🎖 Military', ai_tech:'🤖 AI Tech' };
+  const sigCfg = {
+    critical: { cls:'critical', badge:'🔴 CRITICAL' },
+    high:     { cls:'high',     badge:'🟠 HIGH' },
+    medium:   { cls:'medium',   badge:'🟡 MEDIUM' },
+    low:      { cls:'low',      badge:'🔵 LOW' },
+  };
+
+  list.innerHTML = signals.map(s => {
+    const sc  = sigCfg[s.significance] || sigCfg.low;
+    const kws = s.keywords.map(k => `<span class="signal-kw">${escHtml(k)}</span>`).join('');
+    return `<div class="signal-card sig-${sc.cls}">
+      <div class="signal-card-header">
+        <span class="sig-badge sig-badge-${sc.cls}">${sc.badge}</span>
+        <span class="sig-domain">${domLbl[s.domain] || s.domain}</span>
+        <span class="sig-source">${escHtml(s.source)}</span>
+        <span class="sig-time">${fmtTime(s.timestamp)}</span>
+      </div>
+      <div class="signal-title">${escHtml(s.title)}</div>
+      <div class="signal-summary">${escHtml(s.summary)}</div>
+      <div class="signal-footer">
+        <div class="signal-keywords">${kws}</div>
+        <button class="btn-analyze-signal" data-signal-title="${escHtml(s.title).replace(/"/g,'&quot;')}">🤖 Ask Bot</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function loadIntelView() {
+  renderDomainCards();
+  renderSignalFeed(
+    $('#intel-domain-filter')?.value || 'all',
+    $('#intel-sig-filter')?.value    || 'all'
+  );
+}
+
 // ── Application state ─────────────────────────────────────────────────────────
 
 const State = {
@@ -296,6 +506,7 @@ function switchTab(tab) {
   $$('.view').forEach(el => el.classList.toggle('active', el.id === `view-${tab}`));
   if (tab === 'team')  loadTeamView();
   if (tab === 'audit') loadAuditView();
+  if (tab === 'intel') loadIntelView();
 }
 
 // ── Status indicator ──────────────────────────────────────────────────────────
@@ -805,6 +1016,30 @@ async function init() {
 
   // Audit filter
   $('#audit-filter-select')?.addEventListener('change', e => renderAuditLogs(e.target.value));
+
+  // Intel Watch filters & refresh
+  $('#intel-domain-filter')?.addEventListener('change', () =>
+    renderSignalFeed($('#intel-domain-filter').value, $('#intel-sig-filter').value));
+  $('#intel-sig-filter')?.addEventListener('change', () =>
+    renderSignalFeed($('#intel-domain-filter').value, $('#intel-sig-filter').value));
+  $('#btn-intel-refresh')?.addEventListener('click', () => {
+    loadIntelView();
+    showToast('Intelligence feed refreshed', 'success');
+  });
+
+  // "Ask Bot" button on signal cards (event delegation)
+  $('#intel-signal-list')?.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-analyze-signal');
+    if (!btn) return;
+    const title = btn.dataset.signalTitle;
+    switchMode('solo');
+    const input = $('#chat-input');
+    if (input) {
+      input.value = `Analyze this intelligence signal: "${title}". What are the strategic implications and trend drivers?`;
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+    }
+  });
 
   // Setup Tauri/mock event listeners
   setupEventListeners();

@@ -36,6 +36,7 @@
       <button class="nav-tab active" data-tab="chat"  data-mode-only="solo">💬 Chat</button>
       <button class="nav-tab"        data-tab="team"  data-mode-only="team">🗂 Board</button>
       <button class="nav-tab"        data-tab="audit">📋 Audit</button>
+      <button class="nav-tab"        data-tab="intel">🔍 Intel</button>
     </nav>
 
     <button id="btn-stop" class="btn-stop">⛔ Emergency Stop</button>
@@ -210,6 +211,63 @@
       </div>
 
     </section><!-- /audit-view -->
+
+
+    <!-- ================================================================
+         INTEL WATCH VIEW — Military & AI Technology Trend Analysis
+         ================================================================ -->
+    <section id="view-intel" class="view intel-view">
+
+      <!-- Toolbar -->
+      <div class="intel-toolbar">
+        <div class="intel-toolbar-left">
+          <h3>🔍 Intelligence Watch</h3>
+          <div class="intel-scan-chip">
+            <div class="status-dot running" aria-hidden="true"></div>
+            Tracking 2 domains · Last scan: 5m ago
+          </div>
+        </div>
+        <div class="intel-toolbar-right">
+          <span class="intel-next-scan">Next scan in 25m</span>
+          <button class="btn-intel-refresh" id="btn-intel-refresh">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <!-- Domain summary cards -->
+      <div class="intel-domains">
+        <div class="domain-card" id="domain-card-military">
+          <!-- Rendered by app.js -->
+        </div>
+        <div class="domain-card" id="domain-card-ai-tech">
+          <!-- Rendered by app.js -->
+        </div>
+      </div>
+
+      <!-- Signal feed -->
+      <div class="intel-feed-section">
+        <div class="intel-feed-header">
+          <span class="intel-feed-title">📰 Recent Signals</span>
+          <div class="intel-feed-filters">
+            <select id="intel-domain-filter" class="filter-select">
+              <option value="all">All domains</option>
+              <option value="military">🎖 Military</option>
+              <option value="ai_tech">🤖 AI Technology</option>
+            </select>
+            <select id="intel-sig-filter" class="filter-select">
+              <option value="all">All significance</option>
+              <option value="critical">🔴 Critical</option>
+              <option value="high">🟠 High</option>
+              <option value="medium">🟡 Medium</option>
+              <option value="low">🔵 Low</option>
+            </select>
+          </div>
+        </div>
+        <div id="intel-signal-list" class="intel-signal-list">
+          <!-- Rendered by app.js -->
+        </div>
+      </div>
+
+    </section><!-- /intel-view -->
 
   </main><!-- /content -->
 
