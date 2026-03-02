@@ -51,6 +51,46 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<()> {
             ended_at    TEXT,
             metadata    TEXT
         );
+
+        -- Multi-agent collaboration tables
+
+        -- Known team members (local registry of all bots in the same team).
+        -- Each running myExtBot instance registers itself here on startup.
+        CREATE TABLE IF NOT EXISTS agents (
+            id          TEXT PRIMARY KEY,          -- UUID stable per installation
+            name        TEXT NOT NULL,             -- human-readable label, e.g. 'Alice-bot'
+            role        TEXT,                      -- optional role tag, e.g. 'backend', 'pm'
+            endpoint    TEXT,                      -- ws:// or http:// address (NULL = local)
+            team_id     TEXT NOT NULL,             -- logical team identifier
+            is_local    INTEGER NOT NULL DEFAULT 0, -- 1 = this installation's own bot
+            last_seen   TEXT NOT NULL
+        );
+
+        -- Collaborative tasks that can be delegated between agents.
+        -- status: 'pending' | 'in_progress' | 'done' | 'failed' | 'cancelled'
+        CREATE TABLE IF NOT EXISTS tasks (
+            id              TEXT PRIMARY KEY,
+            title           TEXT NOT NULL,
+            description     TEXT,
+            status          TEXT NOT NULL DEFAULT 'pending',
+            assigned_to     TEXT REFERENCES agents(id),
+            delegated_by    TEXT REFERENCES agents(id),
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL,
+            result          TEXT    -- JSON result payload (populated on completion)
+        );
+
+        -- Inter-agent messages (immutable log for audit / replay).
+        -- msg_type: 'task_assigned' | 'task_update' | 'task_result' | 'ping'
+        CREATE TABLE IF NOT EXISTS collab_messages (
+            id          TEXT PRIMARY KEY,
+            from_agent  TEXT NOT NULL REFERENCES agents(id),
+            to_agent    TEXT NOT NULL REFERENCES agents(id),
+            task_id     TEXT REFERENCES tasks(id),
+            msg_type    TEXT NOT NULL,
+            payload     TEXT NOT NULL,   -- JSON
+            timestamp   TEXT NOT NULL
+        );
         ",
     )?;
     Ok(())

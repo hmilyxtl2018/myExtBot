@@ -1,5 +1,6 @@
 mod agent;
 mod audit;
+mod collab;
 mod commands;
 mod db;
 mod events;
@@ -34,6 +35,12 @@ pub fn run() {
             // Initialize tool registry
             let tools = tools::ToolRegistry::new();
             app.manage(tools);
+            // Initialize multi-agent collaboration layer
+            let collab_conn = db::open(&app_handle)?;
+            let registry = collab::TeamRegistry::new(collab_conn);
+            app.manage(registry);
+            let bus = collab::CollabBus::new();
+            app.manage(bus);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -42,6 +49,13 @@ pub fn run() {
             commands::approve_tool_call,
             commands::deny_tool_call,
             commands::get_audit_logs,
+            // Multi-agent collaboration
+            commands::register_agent,
+            commands::get_team_agents,
+            commands::delegate_task,
+            commands::update_task_status,
+            commands::get_tasks,
+            commands::get_collab_messages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -4,6 +4,8 @@ use tauri::State;
 
 use crate::agent::AgentState;
 use crate::audit::AuditDb;
+use crate::collab::types::{AgentIdentity, CollabMessage, MsgType, TaskStatus};
+use crate::collab::{CollabBus, TeamRegistry};
 use crate::events::{AgentEvent, AgentStatus, ChatMessage};
 use crate::permissions::PermissionManager;
 
@@ -112,5 +114,180 @@ pub fn get_audit_logs(
     db: State<'_, AuditDb>,
 ) -> Result<Vec<serde_json::Value>, String> {
     db.get_audit_logs(limit, offset)
+        .map_err(|e| e.to_string())
+}
+
+// ── Multi-agent collaboration commands ───────────────────────────────────────
+
+/// Register (or refresh) a bot identity in the local team registry.
+///
+/// Call this on startup with the local bot's own details, and again whenever
+/// a remote peer announces itself (e.g. via a WebSocket presence ping).
+///
+/// # Arguments
+/// * `id`       – stable UUID for this agent installation
+/// * `name`     – human-readable label, e.g. `"Alice-bot"`
+/// * `role`     – optional role tag, e.g. `"backend"` or `"pm"`
+/// * `endpoint` – optional WebSocket address of this agent
+/// * `team_id`  – logical team identifier shared by all teammates
+/// * `is_local` – `true` when registering this installation's own bot
+#[tauri::command]
+pub fn register_agent(
+    id: String,
+    name: String,
+    role: Option<String>,
+    endpoint: Option<String>,
+    team_id: String,
+    is_local: bool,
+    registry: State<'_, TeamRegistry>,
+) -> Result<(), String> {
+    let agent = AgentIdentity {
+        id,
+        name,
+        role,
+        endpoint,
+        team_id,
+        is_local,
+        last_seen: chrono::Utc::now(),
+    };
+    registry.upsert_agent(&agent).map_err(|e| e.to_string())
+}
+
+/// Return all agents registered in the given team.
+#[tauri::command]
+pub fn get_team_agents(
+    team_id: String,
+    registry: State<'_, TeamRegistry>,
+) -> Result<Vec<AgentIdentity>, String> {
+    registry.list_agents(&team_id).map_err(|e| e.to_string())
+}
+
+/// Delegate a task to a specific agent (or leave unassigned for self-assignment).
+///
+/// Persists the task in SQLite, emits a `task_assigned` [`CollabMessage`] onto
+/// the [`CollabBus`], and records the message for audit.
+///
+/// # Arguments
+/// * `title`           – short task title
+/// * `description`     – optional longer description
+/// * `assigned_to`     – agent id of the intended assignee (may be `None`)
+/// * `delegated_by`    – agent id of the delegating bot
+#[tauri::command]
+pub fn delegate_task(
+    title: String,
+    description: Option<String>,
+    assigned_to: Option<String>,
+    delegated_by: String,
+    registry: State<'_, TeamRegistry>,
+    bus: State<'_, CollabBus>,
+) -> Result<serde_json::Value, String> {
+    let task = registry
+        .create_task(
+            &title,
+            description.as_deref(),
+            assigned_to.as_deref(),
+            Some(&delegated_by),
+        )
+        .map_err(|e| e.to_string())?;
+
+    // Emit a task_assigned message onto the in-process bus so any listener
+    // (e.g. a WebSocket bridge forwarding to remote agents) can act on it.
+    if let Some(ref assignee) = assigned_to {
+        let msg = CollabMessage {
+            id: uuid::Uuid::new_v4().to_string(),
+            from_agent: delegated_by.clone(),
+            to_agent: assignee.clone(),
+            task_id: Some(task.id.clone()),
+            msg_type: MsgType::TaskAssigned,
+            payload: serde_json::json!({
+                "title": title,
+                "description": description,
+            }),
+            timestamp: chrono::Utc::now(),
+        };
+        // Persist the message for audit; ignore bus send errors (no listeners yet)
+        if let Err(e) = registry.save_message(&msg) {
+            tracing::warn!("Failed to persist collab message: {e}");
+        }
+        let _ = bus.publish(msg);
+    }
+
+    Ok(serde_json::json!({
+        "id":           task.id,
+        "title":        task.title,
+        "status":       task.status.as_str(),
+        "assigned_to":  task.assigned_to,
+        "delegated_by": task.delegated_by,
+        "created_at":   task.created_at.to_rfc3339(),
+    }))
+}
+
+/// Update the status of a task and (on completion) record the result payload.
+///
+/// Publishes a `task_update` or `task_result` message onto the bus so the
+/// delegating agent is notified in real-time.
+///
+/// # Arguments
+/// * `task_id`      – UUID of the task to update
+/// * `status`       – new status string: `"in_progress"`, `"done"`, `"failed"`, `"cancelled"`
+/// * `result`       – optional JSON result (used when `status` is `"done"` or `"failed"`)
+/// * `from_agent`   – agent reporting the update
+/// * `to_agent`     – agent that should be notified (usually the delegator)
+#[tauri::command]
+pub fn update_task_status(
+    task_id: String,
+    status: String,
+    result: Option<serde_json::Value>,
+    from_agent: String,
+    to_agent: String,
+    registry: State<'_, TeamRegistry>,
+    bus: State<'_, CollabBus>,
+) -> Result<(), String> {
+    let ts = TaskStatus::try_from(status.as_str()).map_err(|e| e.to_string())?;
+    registry
+        .update_task_status(&task_id, ts.clone(), result.as_ref())
+        .map_err(|e| e.to_string())?;
+
+    let is_final = matches!(ts, TaskStatus::Done | TaskStatus::Failed | TaskStatus::Cancelled);
+    let msg_type = if is_final {
+        MsgType::TaskResult
+    } else {
+        MsgType::TaskUpdate
+    };
+    let msg = CollabMessage {
+        id: uuid::Uuid::new_v4().to_string(),
+        from_agent: from_agent.clone(),
+        to_agent: to_agent.clone(),
+        task_id: Some(task_id),
+        msg_type,
+        payload: serde_json::json!({ "status": status, "result": result }),
+        timestamp: chrono::Utc::now(),
+    };
+    if let Err(e) = registry.save_message(&msg) {
+        tracing::warn!("Failed to persist collab message: {e}");
+    }
+    let _ = bus.publish(msg);
+    Ok(())
+}
+
+/// Fetch recent tasks with optional pagination.
+#[tauri::command]
+pub fn get_tasks(
+    limit: Option<usize>,
+    offset: Option<usize>,
+    registry: State<'_, TeamRegistry>,
+) -> Result<Vec<serde_json::Value>, String> {
+    registry.list_tasks(limit, offset).map_err(|e| e.to_string())
+}
+
+/// Fetch recent inter-agent messages with optional pagination.
+#[tauri::command]
+pub fn get_collab_messages(
+    limit: Option<usize>,
+    offset: Option<usize>,
+    registry: State<'_, TeamRegistry>,
+) -> Result<Vec<serde_json::Value>, String> {
+    registry
+        .list_messages(limit, offset)
         .map_err(|e| e.to_string())
 }

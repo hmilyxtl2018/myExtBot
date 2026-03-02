@@ -2,15 +2,18 @@
 node_modules/
 target/
 
-# Build outputs
-dist/
+# Build outputs (generated; not committed)
 build/
 *.d.ts.map
 
-# Tauri
+# Tauri build outputs and generated code
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 apps/desktop/dist/
+
+# ── Exception: keep the minimal placeholder the build macro needs ─────────────
+# (uncomment the next line to commit the full Vite-built dist instead)
+# !apps/desktop/dist/
 
 # Env / secrets
 .env
