@@ -19,6 +19,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # The github-pages environment is required by actions/deploy-pages.
+    # Enable it in: Settings → Pages → Source → "GitHub Actions"
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -30,11 +32,10 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload Pages artifact (demo frontend)
         uses: actions/upload-pages-artifact@v3
         with:
-          # Serve the static frontend directly
-          path: apps/desktop/src
+          path: docs
 
       - name: Deploy to GitHub Pages
         id: deployment
