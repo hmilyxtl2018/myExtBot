@@ -194,9 +194,10 @@ function fmtTime(iso) {
   const d = new Date(iso);
   const now = new Date();
   const diffMs = now - d;
-  if (diffMs < 60_000)    return 'just now';
-  if (diffMs < 3600_000)  return `${Math.floor(diffMs/60_000)}m ago`;
-  if (diffMs < 86400_000) return `${Math.floor(diffMs/3600_000)}h ago`;
+  if (diffMs < 60_000)         return 'just now';
+  if (diffMs < 3_600_000)      return `${Math.floor(diffMs/60_000)}m ago`;
+  if (diffMs < 86_400_000)     return `${Math.floor(diffMs/3_600_000)}h ago`;
+  if (diffMs < 604_800_000)    return `${Math.floor(diffMs/86_400_000)}d ago`;
   return d.toLocaleDateString();
 }
 
@@ -210,6 +211,22 @@ function escHtml(s) {
 
 function makeBotReply(content) {
   const lower = content.toLowerCase();
+  if (lower.includes('analyze this intelligence signal') || lower.includes('intelligence signal') ||
+      lower.includes('strategic implication') || lower.includes('trend driver')) {
+    const isMilitary = lower.includes('pentagon') || lower.includes('nato') || lower.includes('military') ||
+      lower.includes('pla') || lower.includes('hypersonic') || lower.includes('space force') ||
+      lower.includes('drone') || lower.includes('idf') || lower.includes('battlefield');
+    if (isMilitary) {
+      return { text: "🎖 **Military Intelligence Analysis**\n\nThis signal reflects the accelerating militarisation of AI decision systems. Key strategic drivers:\n\n• **Speed asymmetry** — AI targeting/command loops operate in milliseconds vs. human reaction times of seconds, shifting the OODA loop advantage\n• **Deterrence dynamics** — Autonomous weapons challenge traditional escalation ladders; ambiguity in attribution raises miscalculation risk\n• **Alliance strain** — Doctrine divergence between NATO members on human-in-the-loop requirements may create capability and legal incompatibilities\n\n**Long-term trend**: Expect rapid convergence between civilian AI progress and military systems. The 12-week Military signal index shows a 24% momentum increase — we are likely in the early-majority adoption phase. Monitor PLA + NATO procurement cycles as leading indicators.", toolCall: null };
+    }
+    return { text: "🤖 **AI Technology Signal Analysis**\n\nThis development signals continued exponential capability growth. Key strategic drivers:\n\n• **Capability-cost compression** — Inference costs are falling ~68% YoY, dramatically lowering the economic barrier to deployment\n• **Regulatory lag** — Governance frameworks (EU AI Act, US EO) trail capability curves by 18–24 months, creating a compliance grey zone\n• **Concentration risk** — A small number of frontier labs (OpenAI, Anthropic, Google DeepMind) control access to transformative models; geopolitical decoupling of chip supply chains adds fragility\n\n**Long-term trend**: AI Tech signal velocity is 17.3 signals/day and accelerating (+67% MoM). We are likely past the inflection point on AGI-precursor systems. Watch Anthropic/OpenAI safety publication cadence as a leading indicator of capability-alignment gaps.", toolCall: null };
+  }
+  if (lower.includes('military') || lower.includes('defense') || lower.includes('weapon') || lower.includes('warfare')) {
+    return { text: "🎖 For military intelligence analysis, head to the **Intel** tab → filter by 🎖 Military to see all tracked signals. You can click **🤖 Ask Bot** on any signal for a contextual deep-dive.", toolCall: null };
+  }
+  if (lower.includes('ai tech') || lower.includes('ai technology') || lower.includes('llm') || lower.includes('large language')) {
+    return { text: "🤖 For AI Technology trend analysis, head to the **Intel** tab → filter by 🤖 AI Technology. The domain card shows 12-week momentum and sub-topic coverage. Use **🤖 Ask Bot** on any signal for strategic implications.", toolCall: null };
+  }
   if (lower.includes('file') || lower.includes('read') || lower.includes('notes')) {
     return {
       text: "Sure! I'll read the file for you. I need your permission to access the filesystem.",
@@ -338,28 +355,35 @@ const INTEL_SIGNALS = [
 
 /**
  * Generates an inline SVG area-line sparkline.
+ * Uses a fixed viewBox + width="100%" so it scales to any container width.
  * @param {number[]} data   Array of numeric values (≥ 2 elements)
- * @param {number}   width  SVG width in px
  * @param {number}   height SVG height in px
  * @param {string}   color  Stroke / fill colour
  */
-function svgSparkline(data, width, height, color) {
+function svgSparkline(data, height, color) {
+  const W = 300; // logical viewBox width (scales to container via CSS)
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
-  const step  = width / (data.length - 1);
+  const step  = W / (data.length - 1);
   const pts   = data.map((v, i) => {
     const x = +(i * step).toFixed(1);
     const y = +(height - 4 - ((v - min) / range) * (height - 8)).toFixed(1);
     return `${x},${y}`;
   });
   const line = pts.join(' ');
-  const area = `0,${height} ${line} ${width},${height}`;
-  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">` +
+  const area = `0,${height} ${line} ${W},${height}`;
+  return `<svg width="100%" height="${height}" viewBox="0 0 ${W} ${height}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
     `<polygon points="${area}" fill="${color}" fill-opacity="0.14"/>` +
     `<polyline points="${line}" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>` +
     `</svg>`;
 }
+
+/** Concise trend narratives keyed by domain. */
+const INTEL_NARRATIVES = {
+  military: 'Signal velocity has climbed 24% MoM, driven by a cluster of AI-autonomy doctrine announcements. Watch China PLA procurement and NATO standardisation decisions as lead indicators for the next acceleration phase.',
+  ai_tech:  'AI Technology is in a hyper-acceleration phase (+67% MoM). Capability-cost compression is outpacing regulatory response. Critical signals are concentrated around agentic/autonomous systems — the highest-risk inflection zone.',
+};
 
 function renderDomainCards() {
   const idMap = { military: 'domain-card-military', ai_tech: 'domain-card-ai-tech' };
@@ -369,13 +393,14 @@ function renderDomainCards() {
     const pct      = Math.round((d.curr30d / d.prev30d - 1) * 100);
     const dir      = pct >= 5 ? '↑' : pct <= -5 ? '↓' : '→';
     const trendCls = pct >= 5 ? 'up' : pct <= -5 ? 'down' : 'flat';
-    const sparkSvg = svgSparkline(d.weeklySignals, 190, 46, d.color);
+    const sparkSvg = svgSparkline(d.weeklySignals, 46, d.color);
     const critCount = INTEL_SIGNALS.filter(s => s.domain === d.key && s.significance === 'critical').length;
     const highCount = INTEL_SIGNALS.filter(s => s.domain === d.key && s.significance === 'high').length;
     const velocity  = (d.curr30d / 30).toFixed(1);
     const since     = new Date(d.trackingSince).toLocaleDateString(undefined, { year:'numeric', month:'short' });
+    const narrative = INTEL_NARRATIVES[d.key] || '';
     el.innerHTML = `
-      <div class="domain-card-header">
+      <div class="domain-card-header domain-card-filter-btn" data-domain="${d.key}" title="Click to filter signals to this domain" role="button" tabindex="0">
         <span class="domain-label">${d.label}</span>
         <span class="domain-trend ${trendCls}">${dir} ${Math.abs(pct)}%</span>
       </div>
@@ -401,19 +426,36 @@ function renderDomainCards() {
         </div>
       </div>
       <div class="domain-subtopics">${d.subTopics.map(t => `<span class="domain-topic-pill">${escHtml(t)}</span>`).join('')}</div>
+      ${narrative ? `<div class="domain-narrative">${escHtml(narrative)}</div>` : ''}
       <div class="domain-tracking-since">🗓 Tracking since ${since}</div>`;
   });
 }
 
-function renderSignalFeed(domainFilter, sigFilter) {
+function renderSignalFeed(domainFilter, sigFilter, sortOrder) {
   const list = $('#intel-signal-list');
   if (!list) return;
   domainFilter = domainFilter || 'all';
   sigFilter    = sigFilter    || 'all';
+  sortOrder    = sortOrder    || 'newest';
 
-  let signals = INTEL_SIGNALS;
+  let signals = INTEL_SIGNALS.slice(); // copy
   if (domainFilter !== 'all') signals = signals.filter(s => s.domain === domainFilter);
   if (sigFilter    !== 'all') signals = signals.filter(s => s.significance === sigFilter);
+
+  // Sort
+  const sigOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+  if (sortOrder === 'newest')     signals.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  else if (sortOrder === 'oldest') signals.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  else if (sortOrder === 'significance') signals.sort((a, b) => (sigOrder[a.significance]||9) - (sigOrder[b.significance]||9));
+
+  // Update count badge
+  const countEl = $('#intel-signal-count');
+  const total   = INTEL_SIGNALS.length;
+  const showing = signals.length;
+  if (countEl) {
+    countEl.textContent = showing === total ? `${total} signals` : `${showing} / ${total}`;
+    countEl.classList.toggle('filtered', showing !== total);
+  }
 
   if (!signals.length) {
     list.innerHTML = '<div class="empty-state"><span class="empty-icon">🔍</span><p>No signals match the current filters.</p></div>';
@@ -442,17 +484,64 @@ function renderSignalFeed(domainFilter, sigFilter) {
       <div class="signal-summary">${escHtml(s.summary)}</div>
       <div class="signal-footer">
         <div class="signal-keywords">${kws}</div>
-        <button class="btn-analyze-signal" data-signal-title="${escHtml(s.title).replace(/"/g,'&quot;')}">🤖 Ask Bot</button>
+        <button class="btn-analyze-signal" data-signal-title="${escHtml(s.title)}">🤖 Ask Bot</button>
       </div>
     </div>`;
   }).join('');
 }
 
+/** Tracks when the intel view was last loaded (for the live scan chip). */
+let _intelLastRefresh = null;
+let _intelScanTimer   = null;
+
+function updateScanChip() {
+  if (!_intelLastRefresh) return;
+  const chipEl    = $('#intel-scan-chip-text');
+  const nextEl    = $('#intel-next-scan');
+  const INTERVAL  = 30 * 60; // 30-min scan interval in seconds
+  const elapsed   = Math.round((Date.now() - _intelLastRefresh) / 1000);
+  const remaining = Math.max(0, INTERVAL - elapsed);
+  const elapsedStr  = elapsed  < 60 ? `${elapsed}s ago`  : `${Math.floor(elapsed/60)}m ago`;
+  const remainStr   = remaining < 60 ? `${remaining}s`    : `${Math.ceil(remaining/60)}m`;
+  if (chipEl) chipEl.textContent = `Tracking 2 domains · Last scan: ${elapsedStr}`;
+  if (nextEl) nextEl.textContent = `Next scan in ${remainStr}`;
+}
+
 function loadIntelView() {
+  _intelLastRefresh = Date.now();
+  // Restart the live chip timer
+  if (_intelScanTimer) clearInterval(_intelScanTimer);
+  _intelScanTimer = setInterval(updateScanChip, 10_000);
+  updateScanChip();
+
   renderDomainCards();
+
+  // Wire domain-card click-to-filter (event delegation on the cards container)
+  const cardsEl = $('#intel-domains-container');
+  if (cardsEl && !cardsEl._filterBound) {
+    cardsEl._filterBound = true;
+    cardsEl.addEventListener('click', e => {
+      const btn = e.target.closest('.domain-card-filter-btn');
+      if (!btn) return;
+      const domain = btn.dataset.domain;
+      const domSel = $('#intel-domain-filter');
+      if (domSel && domain) {
+        domSel.value = domain;
+        renderSignalFeed(domSel.value, $('#intel-sig-filter')?.value, $('#intel-sort-select')?.value);
+      }
+    });
+    cardsEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        const btn = e.target.closest('.domain-card-filter-btn');
+        if (btn) { e.preventDefault(); btn.click(); }
+      }
+    });
+  }
+
   renderSignalFeed(
     $('#intel-domain-filter')?.value || 'all',
-    $('#intel-sig-filter')?.value    || 'all'
+    $('#intel-sig-filter')?.value    || 'all',
+    $('#intel-sort-select')?.value   || 'newest'
   );
 }
 
@@ -1019,9 +1108,11 @@ async function init() {
 
   // Intel Watch filters & refresh
   $('#intel-domain-filter')?.addEventListener('change', () =>
-    renderSignalFeed($('#intel-domain-filter').value, $('#intel-sig-filter').value));
+    renderSignalFeed($('#intel-domain-filter').value, $('#intel-sig-filter').value, $('#intel-sort-select')?.value));
   $('#intel-sig-filter')?.addEventListener('change', () =>
-    renderSignalFeed($('#intel-domain-filter').value, $('#intel-sig-filter').value));
+    renderSignalFeed($('#intel-domain-filter').value, $('#intel-sig-filter').value, $('#intel-sort-select')?.value));
+  $('#intel-sort-select')?.addEventListener('change', () =>
+    renderSignalFeed($('#intel-domain-filter').value, $('#intel-sig-filter').value, $('#intel-sort-select').value));
   $('#btn-intel-refresh')?.addEventListener('click', () => {
     loadIntelView();
     showToast('Intelligence feed refreshed', 'success');

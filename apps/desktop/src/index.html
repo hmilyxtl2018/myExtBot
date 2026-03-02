@@ -224,17 +224,17 @@
           <h3>🔍 Intelligence Watch</h3>
           <div class="intel-scan-chip">
             <div class="status-dot running" aria-hidden="true"></div>
-            Tracking 2 domains · Last scan: 5m ago
+            <span id="intel-scan-chip-text">Tracking 2 domains · Last scan: —</span>
           </div>
         </div>
         <div class="intel-toolbar-right">
-          <span class="intel-next-scan">Next scan in 25m</span>
+          <span id="intel-next-scan" class="intel-next-scan">Next scan in —</span>
           <button class="btn-intel-refresh" id="btn-intel-refresh">🔄 Refresh</button>
         </div>
       </div>
 
       <!-- Domain summary cards -->
-      <div class="intel-domains">
+      <div class="intel-domains" id="intel-domains-container">
         <div class="domain-card" id="domain-card-military">
           <!-- Rendered by app.js -->
         </div>
@@ -246,7 +246,10 @@
       <!-- Signal feed -->
       <div class="intel-feed-section">
         <div class="intel-feed-header">
-          <span class="intel-feed-title">📰 Recent Signals</span>
+          <span class="intel-feed-title">
+            📰 Recent Signals
+            <span id="intel-signal-count" class="intel-signal-count"></span>
+          </span>
           <div class="intel-feed-filters">
             <select id="intel-domain-filter" class="filter-select">
               <option value="all">All domains</option>
@@ -259,6 +262,11 @@
               <option value="high">🟠 High</option>
               <option value="medium">🟡 Medium</option>
               <option value="low">🔵 Low</option>
+            </select>
+            <select id="intel-sort-select" class="filter-select">
+              <option value="newest">⬇ Newest first</option>
+              <option value="oldest">⬆ Oldest first</option>
+              <option value="significance">🔴 Significance</option>
             </select>
           </div>
         </div>

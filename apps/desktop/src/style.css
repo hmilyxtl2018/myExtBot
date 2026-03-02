@@ -1057,3 +1057,32 @@ ul, ol { list-style: none; }
   transition: all var(--t-fast);
 }
 .btn-analyze-signal:hover { background: rgba(109,94,243,.2); box-shadow: 0 2px 6px var(--accent-glow); }
+
+/* Signal count badge */
+.intel-signal-count {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600;
+  padding: 1px 8px; border-radius: var(--r-full);
+  background: var(--bg-raised); border: 1px solid var(--border);
+  color: var(--text-muted); margin-left: 6px;
+}
+.intel-signal-count.filtered {
+  background: var(--accent-dim); border-color: rgba(109,94,243,.28);
+  color: var(--accent);
+}
+
+/* Domain card trend narrative */
+.domain-narrative {
+  margin-top: 8px; font-size: 11px; line-height: 1.6;
+  color: var(--text-secondary);
+  padding: 7px 10px; border-radius: var(--r-sm);
+  background: var(--bg-raised); border-left: 2px solid var(--accent-glow);
+}
+
+/* Domain card header as click-to-filter button */
+.domain-card-filter-btn {
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background var(--t-fast);
+}
+.domain-card-filter-btn:hover { background: var(--bg-raised); }
