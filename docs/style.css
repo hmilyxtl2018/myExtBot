@@ -1086,3 +1086,118 @@ ul, ol { list-style: none; }
   transition: background var(--t-fast);
 }
 .domain-card-filter-btn:hover { background: var(--bg-raised); }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   INTEL ANALYSIS CARD — rich bot reply in chat
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Widen the assistant message row when it contains a rich card */
+.message.assistant.rich { max-width: 96%; }
+
+/* Remove bubble background/border/padding so the card can self-style */
+.message.assistant .msg-bubble-rich {
+  background: none;
+  border: none;
+  padding: 4px 0 0;
+}
+
+/* Card outer shell */
+.intel-analysis-card {
+  display: flex; flex-direction: column; gap: 10px;
+  font-size: 12px;
+}
+
+/* Domain header bar */
+.ia-domain-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.ia-domain-lbl { font-size: 13px; font-weight: 700; }
+.ia-trend-badge {
+  font-size: 11px; font-weight: 700;
+  padding: 2px 9px; border-radius: var(--r-full);
+}
+.ia-trend-up   { background: rgba(22,163,74,.12);  color: var(--green); }
+.ia-trend-down { background: rgba(220,38,38,.12);  color: var(--red); }
+.ia-trend-flat { background: var(--bg-overlay);    color: var(--text-muted); }
+
+/* Section label (mini ALL-CAPS heading) */
+.ia-section-lbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--text-muted); margin-bottom: -2px;
+}
+
+/* Analyzed signal reference */
+.ia-sig-ref {
+  font-size: 11px; font-style: italic; color: var(--text-secondary);
+  padding: 6px 10px;
+  background: var(--bg-raised);
+  border-left: 2px solid var(--border);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+/* Two-column layout: sparkline | stats */
+.ia-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ia-sparkwrap { line-height: 0; }
+.ia-spark-caption {
+  font-size: 9px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: .05em; margin-top: 3px;
+}
+
+/* Stats 2×2 grid */
+.ia-stats-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+  height: 100%; align-content: start;
+}
+.ia-stat {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 6px 4px;
+  background: var(--bg-raised); border-radius: var(--r-sm);
+}
+.ia-stat-val { font-size: 17px; font-weight: 700; line-height: 1.15; }
+.ia-stat-key {
+  font-size: 9px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+
+/* Significance breakdown bar chart */
+.ia-bar-chart { display: flex; flex-direction: column; gap: 5px; }
+.ibar-row { display: flex; align-items: center; gap: 7px; }
+.ibar-label {
+  width: 74px; font-size: 10px; font-weight: 600;
+  flex-shrink: 0; white-space: nowrap;
+}
+.ibar-track {
+  flex: 1; height: 7px; border-radius: var(--r-full);
+  background: var(--bg-overlay); overflow: hidden;
+}
+.ibar-fill { height: 100%; border-radius: var(--r-full); }
+.ibar-val { width: 14px; text-align: right; font-size: 10px; font-weight: 700; color: var(--text-secondary); }
+
+/* Strategic driver cards */
+.ia-drivers { display: flex; flex-direction: column; gap: 6px; }
+.ia-driver {
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 8px 10px;
+  background: var(--bg-raised); border-radius: var(--r-sm);
+}
+.ia-driver-icon { font-size: 15px; flex-shrink: 0; line-height: 1.4; }
+.ia-driver-body { display: flex; flex-direction: column; gap: 1px; }
+.ia-driver-title { font-size: 11px; font-weight: 700; }
+.ia-driver-text  { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+
+/* Trend assessment box */
+.ia-trend-box {
+  padding: 9px 12px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  border-radius: var(--r-sm);
+}
+.ia-trend-box-lbl {
+  font-size: 10px; font-weight: 700; color: var(--accent);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px;
+}
+.ia-trend-box-txt { font-size: 11px; color: var(--text-secondary); line-height: 1.55; }

@@ -141,7 +141,7 @@ const MockBackend = (() => {
             const reply = makeBotReply(args.content);
             MockEmitter.emit('agent-event', { type: 'StatusChanged', status: 'Thinking' });
             setTimeout(() => {
-              MockEmitter.emit('agent-event', { type: 'ChatMessage', message: { id: uid(), role: 'assistant', content: reply.text, timestamp: new Date().toISOString() } });
+              MockEmitter.emit('agent-event', { type: 'ChatMessage', message: { id: uid(), role: 'assistant', content: reply.text, html: reply.html || null, timestamp: new Date().toISOString() } });
               if (reply.toolCall) {
                 setTimeout(() => {
                   MockEmitter.emit('agent-event', { type: 'StatusChanged', status: 'WaitingApproval' });
@@ -216,10 +216,11 @@ function makeBotReply(content) {
     const isMilitary = lower.includes('pentagon') || lower.includes('nato') || lower.includes('military') ||
       lower.includes('pla') || lower.includes('hypersonic') || lower.includes('space force') ||
       lower.includes('drone') || lower.includes('idf') || lower.includes('battlefield');
-    if (isMilitary) {
-      return { text: "🎖 **Military Intelligence Analysis**\n\nThis signal reflects the accelerating militarisation of AI decision systems. Key strategic drivers:\n\n• **Speed asymmetry** — AI targeting/command loops operate in milliseconds vs. human reaction times of seconds, shifting the OODA loop advantage\n• **Deterrence dynamics** — Autonomous weapons challenge traditional escalation ladders; ambiguity in attribution raises miscalculation risk\n• **Alliance strain** — Doctrine divergence between NATO members on human-in-the-loop requirements may create capability and legal incompatibilities\n\n**Long-term trend**: Expect rapid convergence between civilian AI progress and military systems. The 12-week Military signal index shows a 24% momentum increase — we are likely in the early-majority adoption phase. Monitor PLA + NATO procurement cycles as leading indicators.", toolCall: null };
-    }
-    return { text: "🤖 **AI Technology Signal Analysis**\n\nThis development signals continued exponential capability growth. Key strategic drivers:\n\n• **Capability-cost compression** — Inference costs are falling ~68% YoY, dramatically lowering the economic barrier to deployment\n• **Regulatory lag** — Governance frameworks (EU AI Act, US EO) trail capability curves by 18–24 months, creating a compliance grey zone\n• **Concentration risk** — A small number of frontier labs (OpenAI, Anthropic, Google DeepMind) control access to transformative models; geopolitical decoupling of chip supply chains adds fragility\n\n**Long-term trend**: AI Tech signal velocity is 17.3 signals/day and accelerating (+67% MoM). We are likely past the inflection point on AGI-precursor systems. Watch Anthropic/OpenAI safety publication cadence as a leading indicator of capability-alignment gaps.", toolCall: null };
+    // Extract signal title from between the first pair of double-quotes in the message
+    const titleMatch = content.match(/"([^"]{3,})"/);
+    const signalTitle = titleMatch ? titleMatch[1] : (isMilitary ? 'Military intelligence signal' : 'AI technology signal');
+    const domainKey = isMilitary ? 'military' : 'ai_tech';
+    return { text: '', html: makeIntelAnalysisHtml(domainKey, signalTitle), toolCall: null };
   }
   if (lower.includes('military') || lower.includes('defense') || lower.includes('weapon') || lower.includes('warfare')) {
     return { text: "🎖 For military intelligence analysis, head to the **Intel** tab → filter by 🎖 Military to see all tracked signals. You can click **🤖 Ask Bot** on any signal for a contextual deep-dive.", toolCall: null };
@@ -384,6 +385,114 @@ const INTEL_NARRATIVES = {
   military: 'Signal velocity has climbed 24% MoM, driven by a cluster of AI-autonomy doctrine announcements. Watch China PLA procurement and NATO standardisation decisions as lead indicators for the next acceleration phase.',
   ai_tech:  'AI Technology is in a hyper-acceleration phase (+67% MoM). Capability-cost compression is outpacing regulatory response. Critical signals are concentrated around agentic/autonomous systems — the highest-risk inflection zone.',
 };
+
+/**
+ * Builds a rich HTML intel analysis card for embedding in a chat message bubble.
+ * Includes an inline sparkline chart, a 30-day stats grid, a horizontal significance
+ * breakdown bar chart, strategic driver cards, and a trend assessment box.
+ *
+ * @param {'military'|'ai_tech'} domainKey
+ * @param {string} signalTitle  The specific signal title being analyzed
+ * @returns {string} Safe HTML string (all user-supplied strings are escaped)
+ */
+function makeIntelAnalysisHtml(domainKey, signalTitle) {
+  const d = INTEL_DOMAINS[domainKey];
+  if (!d) return '';
+
+  const pct      = d.prev30d > 0 ? Math.round((d.curr30d / d.prev30d - 1) * 100) : 0;
+  const dir      = pct >= 5 ? '↑' : pct <= -5 ? '↓' : '→';
+  const trendCls = pct >= 5 ? 'up' : pct <= -5 ? 'down' : 'flat';
+  const velocity = (d.curr30d / 30).toFixed(1);
+
+  // Signal breakdown by significance
+  const domainSigs = INTEL_SIGNALS.filter(s => s.domain === domainKey);
+  const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+  domainSigs.forEach(s => { if (s.significance in counts) counts[s.significance]++; });
+  const total = domainSigs.length || 1;
+
+  // Inline sparkline — 44px height matches the stats grid row height
+  const sparkSvg = svgSparkline(d.weeklySignals, 44, d.color);
+
+  // Significance breakdown bar rows
+  const sigRows = [
+    { key: 'critical', label: '🔴 Critical', color: 'var(--red)' },
+    { key: 'high',     label: '🟠 High',     color: 'var(--orange)' },
+    { key: 'medium',   label: '🟡 Medium',   color: 'var(--yellow)' },
+    { key: 'low',      label: '🔵 Low',      color: 'var(--blue)' },
+  ].map(({ key, label, color }) => {
+    const pctBar = Math.round((counts[key] / total) * 100);
+    return `<div class="ibar-row">
+      <span class="ibar-label">${label}</span>
+      <div class="ibar-track"><div class="ibar-fill" style="width:${pctBar}%;background:${color}"></div></div>
+      <span class="ibar-val">${counts[key]}</span>
+    </div>`;
+  }).join('');
+
+  // Strategic driver cards
+  const isMilitary = domainKey === 'military';
+  const drivers = isMilitary ? [
+    { icon: '⚡', title: 'Speed asymmetry',
+      body: 'AI targeting/command loops operate in milliseconds vs. human reaction times of seconds — shifting the OODA loop advantage toward the technologically superior actor.' },
+    { icon: '⚖️', title: 'Deterrence dynamics',
+      body: 'Autonomous weapons challenge traditional escalation ladders; attribution ambiguity between AI-assisted and fully autonomous actions raises miscalculation risk between peer powers.' },
+    { icon: '🤝', title: 'Alliance strain',
+      body: 'NATO member divergence on human-in-the-loop requirements may create doctrine, capability, and legal incompatibilities at the point of combined-arms integration.' },
+  ] : [
+    { icon: '💸', title: 'Capability-cost compression',
+      body: 'Inference costs falling ~68% YoY dramatically lowers the economic barrier to large-scale deployment, accelerating adoption curves across all sectors simultaneously.' },
+    { icon: '⏱', title: 'Regulatory lag',
+      body: 'Governance frameworks (EU AI Act, US EO) trail capability curves by 18–24 months, creating a structural grey zone that concentrates liability and reputational risk on deployers.' },
+    { icon: '🏭', title: 'Concentration risk',
+      body: 'A small number of frontier labs control access to transformative models; geopolitical decoupling of advanced chip supply chains adds systemic fragility to the entire capability stack.' },
+  ];
+
+  const driverCards = drivers.map(dr =>
+    `<div class="ia-driver">
+      <span class="ia-driver-icon">${dr.icon}</span>
+      <div class="ia-driver-body">
+        <div class="ia-driver-title">${escHtml(dr.title)}</div>
+        <div class="ia-driver-text">${escHtml(dr.body)}</div>
+      </div>
+    </div>`
+  ).join('');
+
+  const trendText = isMilitary
+    ? `The 12-week Military signal index shows a ${dir}${Math.abs(pct)}% MoM acceleration, consistent with early-majority doctrine adoption. Monitor China PLA procurement and NATO standardisation cycles as leading indicators for the next phase.`
+    : `AI Tech signal velocity is ${velocity} signals/day and accelerating ${dir}${Math.abs(pct)}% MoM. We are likely past the inflection point on AGI-precursor systems. Watch frontier lab safety publication cadence as a leading indicator of capability-alignment gaps.`;
+
+  return `<div class="intel-analysis-card">
+  <div class="ia-domain-hdr">
+    <span class="ia-domain-lbl">${d.label}</span>
+    <span class="ia-trend-badge ia-trend-${trendCls}">${dir}&thinsp;${Math.abs(pct)}%&thinsp;MoM</span>
+  </div>
+  <div class="ia-section-lbl">Analyzed signal</div>
+  <div class="ia-sig-ref">&ldquo;${escHtml(signalTitle)}&rdquo;</div>
+  <div class="ia-two-col">
+    <div>
+      <div class="ia-section-lbl">12-week signal trend</div>
+      <div class="ia-sparkwrap">${sparkSvg}</div>
+      <div class="ia-spark-caption">weekly signal count</div>
+    </div>
+    <div>
+      <div class="ia-section-lbl">30-day statistics</div>
+      <div class="ia-stats-grid">
+        <div class="ia-stat"><span class="ia-stat-val">${d.curr30d}</span><span class="ia-stat-key">signals</span></div>
+        <div class="ia-stat"><span class="ia-stat-val">${velocity}</span><span class="ia-stat-key">/ day</span></div>
+        <div class="ia-stat"><span class="ia-stat-val" style="color:var(--red)">${counts.critical}</span><span class="ia-stat-key">critical</span></div>
+        <div class="ia-stat"><span class="ia-stat-val" style="color:var(--orange)">${counts.high}</span><span class="ia-stat-key">high</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="ia-section-lbl">Signal significance breakdown</div>
+  <div class="ia-bar-chart">${sigRows}</div>
+  <div class="ia-section-lbl">Key strategic drivers</div>
+  <div class="ia-drivers">${driverCards}</div>
+  <div class="ia-trend-box">
+    <div class="ia-trend-box-lbl">📈 Long-term trend assessment</div>
+    <div class="ia-trend-box-txt">${escHtml(trendText)}</div>
+  </div>
+</div>`;
+}
 
 function renderDomainCards() {
   const idMap = { military: 'domain-card-military', ai_tech: 'domain-card-ai-tech' };
@@ -631,7 +740,7 @@ function updateStatusIndicator(status) {
 
 // ── Chat view ──────────────────────────────────────────────────────────────────
 
-function appendMessage(role, content, id) {
+function appendMessage(role, content, id, opts = {}) {
   const thread = $('#chat-messages');
   const isUser = role === 'user';
   const isSystem = role === 'system';
@@ -645,6 +754,10 @@ function appendMessage(role, content, id) {
   } else {
     const avatarEmoji = isUser ? '👤' : '🤖';
     const name = isUser ? 'You' : 'Alice-bot';
+    const isRich = !isUser && opts.html != null && opts.html !== '';
+    if (isRich) el.classList.add('rich');
+    const bubbleClass = isRich ? 'msg-bubble msg-bubble-rich' : 'msg-bubble';
+    const bubbleContent = isRich ? opts.html : escHtml(content);
     el.innerHTML = `
       <div class="msg-avatar">${avatarEmoji}</div>
       <div class="msg-body">
@@ -652,7 +765,7 @@ function appendMessage(role, content, id) {
           <span class="msg-name">${name}</span>
           <span class="msg-time">${fmtTime(new Date().toISOString())}</span>
         </div>
-        <div class="msg-bubble">${escHtml(content)}</div>
+        <div class="${bubbleClass}">${bubbleContent}</div>
       </div>`;
   }
 
@@ -998,7 +1111,8 @@ function setupEventListeners() {
       case 'ChatMessage':
         removeTyping();
         if (payload.message.role !== 'user') {
-          appendMessage(payload.message.role, payload.message.content, payload.message.id);
+          appendMessage(payload.message.role, payload.message.content, payload.message.id,
+            payload.message.html ? { html: payload.message.html } : {});
         }
         break;
 
