@@ -55,6 +55,62 @@ It uses a mock backend so you can click through all UI features without building
 
 ---
 
+## ⚡ Quick API test (no GUI needed)
+
+Want to verify your API key works **before** building the full desktop app?
+The `llm_smoke` example runs the complete LLM pipeline from the command line in seconds —
+only **Rust / Cargo** is required (no Node.js, no GTK libraries, no Tauri GUI).
+
+```bash
+# 1. Clone and enter the Rust crate
+git clone https://github.com/<your-username>/myExtBot.git
+cd myExtBot/apps/desktop/src-tauri
+
+# 2a. OpenAI (or any OpenAI-compatible proxy, e.g. xiaoai.plus)
+OPENAI_API_KEY=sk-your-key \
+  cargo run --example llm_smoke
+
+# 2b. With a proxy (e.g. xiaoai.plus with any supported model)
+OPENAI_API_KEY=sk-your-key \
+OPENAI_BASE_URL=https://xiaoai.plus \
+OPENAI_MODEL=gpt-4o \
+  cargo run --example llm_smoke
+
+# 2c. Anthropic
+LLM_PROVIDER=anthropic \
+ANTHROPIC_API_KEY=sk-ant-your-key \
+  cargo run --example llm_smoke
+
+# 2d. Ollama (free, local — `ollama serve` must already be running)
+LLM_PROVIDER=ollama cargo run --example llm_smoke
+```
+
+Expected output on success:
+
+```
+╔══════════════════════════════════════════╗
+║       myExtBot — LLM smoke test           ║
+╚══════════════════════════════════════════╝
+  provider : openai
+  model    : gpt-4o
+
+Sending prompt …
+
+✅  Success!
+   model    : gpt-4o
+   reply    : myExtBot smoke test OK
+   tokens   : 15 prompt + 8 completion
+   latency  : 842 ms
+```
+
+> **Or use a `.env` file** — copy `.env.example` → `.env` and fill in your key,
+> then just run `cargo run --example llm_smoke` (the example auto-loads `.env`).
+
+Once you see `✅ Success!` your API key is working.
+You can then proceed to the full desktop app build below.
+
+---
+
 ## 🖥 Local installation (full desktop app)
 
 ### Prerequisites
