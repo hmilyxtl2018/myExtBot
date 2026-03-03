@@ -19,6 +19,7 @@ Features:
 | Provider | Required key | Where to get it | Cost | Local? |
 |----------|-------------|-----------------|------|--------|
 | **OpenAI** _(default)_ | `OPENAI_API_KEY` | <https://platform.openai.com/api-keys> | Pay-per-token | ☁️ Cloud |
+| **OpenAI-compatible proxy** | `OPENAI_API_KEY` + `OPENAI_BASE_URL` | e.g. <https://xiaoai.plus> | Varies | ☁️ Cloud |
 | **Anthropic** | `ANTHROPIC_API_KEY` | <https://console.anthropic.com/settings/keys> | Pay-per-token | ☁️ Cloud |
 | **Ollama** | _(none)_ | [ollama.com/download](https://ollama.com/download) | Free | 🖥 Local |
 
@@ -27,6 +28,11 @@ Features:
 > # Fastest start: use OpenAI
 > LLM_PROVIDER=openai
 > OPENAI_API_KEY=sk-...
+>
+> # Using an OpenAI-compatible proxy (e.g. xiaoai.plus)
+> LLM_PROVIDER=openai
+> OPENAI_API_KEY=sk-...        # your proxy token
+> OPENAI_BASE_URL=https://xiaoai.plus
 >
 > # Free & private: use Ollama (install ollama, then `ollama pull llama3.2`)
 > LLM_PROVIDER=ollama
@@ -199,7 +205,8 @@ All configuration is via environment variables in `.env` (see `.env.example`):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_PROVIDER` | `openai` | LLM provider: `openai`, `anthropic`, or `ollama` |
-| `OPENAI_API_KEY` | — | Your OpenAI secret key |
+| `OPENAI_API_KEY` | — | Your OpenAI secret key (or compatible proxy key) |
+| `OPENAI_BASE_URL` | `https://api.openai.com` | Override base URL for OpenAI-compatible proxies |
 | `OPENAI_MODEL` | `gpt-4o` | Model name |
 | `ANTHROPIC_API_KEY` | — | Your Anthropic secret key |
 | `ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022` | Model name |

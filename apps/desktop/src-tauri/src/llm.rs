@@ -3,15 +3,16 @@
 //! Reads configuration from environment variables (loaded from `.env` by
 //! `dotenvy` at startup in `lib.rs`):
 //!
-//! | Variable          | Default                         | Description                   |
-//! |-------------------|---------------------------------|-------------------------------|
-//! | `LLM_PROVIDER`    | `openai`                        | `openai` \| `anthropic` \| `ollama` |
-//! | `OPENAI_API_KEY`  | —                               | OpenAI secret key             |
-//! | `OPENAI_MODEL`    | `gpt-4o`                        | Model name                    |
-//! | `ANTHROPIC_API_KEY` | —                             | Anthropic secret key          |
-//! | `ANTHROPIC_MODEL` | `claude-3-5-sonnet-20241022`    | Model name                    |
-//! | `OLLAMA_BASE_URL` | `http://localhost:11434`        | Ollama server base URL        |
-//! | `OLLAMA_MODEL`    | `llama3.2`                      | Model pulled in Ollama        |
+//! | Variable           | Default                         | Description                                     |
+//! |--------------------|---------------------------------|-------------------------------------------------|
+//! | `LLM_PROVIDER`     | `openai`                        | `openai` \| `anthropic` \| `ollama`             |
+//! | `OPENAI_API_KEY`   | —                               | OpenAI secret key (or compatible proxy key)     |
+//! | `OPENAI_BASE_URL`  | `https://api.openai.com`        | Override to use an OpenAI-compatible proxy      |
+//! | `OPENAI_MODEL`     | `gpt-4o`                        | Model name                                      |
+//! | `ANTHROPIC_API_KEY`| —                               | Anthropic secret key                            |
+//! | `ANTHROPIC_MODEL`  | `claude-3-5-sonnet-20241022`    | Model name                                      |
+//! | `OLLAMA_BASE_URL`  | `http://localhost:11434`        | Ollama server base URL                          |
+//! | `OLLAMA_MODEL`     | `llama3.2`                      | Model pulled in Ollama                          |
 
 use anyhow::{anyhow, Result};
 use serde_json::json;
@@ -51,6 +52,9 @@ async fn openai_complete(user_message: &str) -> Result<LlmResponse> {
         return Err(anyhow!("OPENAI_API_KEY is empty. See .env.example."));
     }
     let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".into());
+    let base_url = std::env::var("OPENAI_BASE_URL")
+        .unwrap_or_else(|_| "https://api.openai.com".into());
+    let endpoint = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
 
     let start = Instant::now();
     let client = reqwest::Client::new();
@@ -60,7 +64,7 @@ async fn openai_complete(user_message: &str) -> Result<LlmResponse> {
     });
 
     let resp = client
-        .post("https://api.openai.com/v1/chat/completions")
+        .post(&endpoint)
         .bearer_auth(&api_key)
         .json(&body)
         .send()
