@@ -100,6 +100,7 @@ pub fn emergency_stop(
 /// Grants the permission, transitions the agent to `RunningTool`, then spawns
 /// a background task that executes the tool, emits a `ToolCallResult` event,
 /// and transitions the agent back to `Completed` or `Failed`.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn approve_tool_call(
     call_id: String,
@@ -111,7 +112,7 @@ pub fn approve_tool_call(
     db: State<'_, AuditDb>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    if cache_session {
+    if !perms.is_permitted_session(&tool) && cache_session {
         perms.grant_session(&tool);
     }
     // Log permission approval

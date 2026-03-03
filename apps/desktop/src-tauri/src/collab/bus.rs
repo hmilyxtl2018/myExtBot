@@ -46,11 +46,13 @@ impl CollabBus {
     }
 
     /// Subscribe to all future messages on the bus.
+    #[allow(dead_code)]
     pub fn subscribe(&self) -> broadcast::Receiver<CollabMessage> {
         self.sender.subscribe()
     }
 
     /// Return the number of active receivers.
+    #[allow(dead_code)]
     pub fn receiver_count(&self) -> usize {
         self.sender.receiver_count()
     }

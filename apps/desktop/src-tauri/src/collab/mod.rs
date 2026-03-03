@@ -27,4 +27,5 @@ pub mod types;
 
 pub use bus::CollabBus;
 pub use registry::TeamRegistry;
+#[allow(unused_imports)]
 pub use types::{AgentIdentity, CollabMessage, MsgType, Task, TaskStatus};
