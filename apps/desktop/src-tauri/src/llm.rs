@@ -19,6 +19,7 @@ use serde_json::json;
 use std::time::Instant;
 
 /// Result of one LLM completion call.
+#[derive(Debug)]
 pub struct LlmResponse {
     pub text: String,
     pub model: String,
@@ -176,4 +177,105 @@ async fn ollama_complete(user_message: &str) -> Result<LlmResponse> {
     let completion_tokens = json["eval_count"].as_u64().unwrap_or(0) as u32;
 
     Ok(LlmResponse { text, model, prompt_tokens, completion_tokens, duration_ms })
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    // These tests verify env-var guard behaviour without making real network
+    // calls. They manipulate environment variables, so they must run
+    // sequentially (serial) or with isolated env state. We use std::env::set_var
+    // in a controlled way: each test clears only the vars it touches.
+
+    use super::*;
+
+    /// Run an async closure on a single-threaded Tokio runtime so we can call
+    /// `complete()` (which is async) from synchronous test functions.
+    fn run<F: std::future::Future>(f: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(f)
+    }
+
+    /// Serialize all env-var–mutating tests so they don't race each other.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap()
+    }
+
+    #[test]
+    fn test_unknown_provider_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "foobar");
+        let result = run(complete("hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("foobar"), "error should name the bad provider");
+    }
+
+    #[test]
+    fn test_openai_missing_key_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "openai");
+        std::env::remove_var("OPENAI_API_KEY");
+        let result = run(complete("hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.to_lowercase().contains("openai_api_key"),
+            "error should mention the missing env var, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_openai_empty_key_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "openai");
+        std::env::set_var("OPENAI_API_KEY", "");
+        let result = run(complete("hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        std::env::remove_var("OPENAI_API_KEY");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.to_lowercase().contains("empty"),
+            "error should mention empty key, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_anthropic_missing_key_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "anthropic");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        let result = run(complete("hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.to_lowercase().contains("anthropic_api_key"),
+            "error should mention the missing env var, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_anthropic_empty_key_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "anthropic");
+        std::env::set_var("ANTHROPIC_API_KEY", "");
+        let result = run(complete("hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.to_lowercase().contains("empty"),
+            "error should mention empty key, got: {msg}"
+        );
+    }
 }

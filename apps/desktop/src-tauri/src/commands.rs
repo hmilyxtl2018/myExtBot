@@ -1,6 +1,6 @@
 //! Tauri IPC commands exposed to the frontend.
 
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::agent::AgentState;
 use crate::audit::AuditDb;

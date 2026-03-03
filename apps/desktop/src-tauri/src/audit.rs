@@ -293,4 +293,72 @@ mod tests {
         let id1 = logs[1]["id"].as_i64().unwrap();
         assert!(id0 > id1);
     }
+
+    #[test]
+    fn test_log_session_start_inserts_row() {
+        let db = in_memory_db();
+        db.log_session_start("sess-abc").unwrap();
+        // Verify the sessions table is accessible (no panic / error is sufficient –
+        // the table is separate from audit_logs so we just re-call to confirm idempotency)
+        db.log_session_start("sess-abc").unwrap(); // INSERT OR IGNORE – should not error
+    }
+
+    #[test]
+    fn test_audit_log_empty_on_fresh_db() {
+        let db = in_memory_db();
+        let logs = db.get_audit_logs(None, None).unwrap();
+        assert!(logs.is_empty());
+    }
+
+    #[test]
+    fn test_audit_log_default_limit_is_50() {
+        let db = in_memory_db();
+        // Insert 60 rows
+        for i in 0..60u32 {
+            db.log_model_usage("m", i, i, u64::from(i)).unwrap();
+        }
+        let logs = db.get_audit_logs(None, None).unwrap();
+        // Default limit = 50
+        assert_eq!(logs.len(), 50);
+    }
+
+    #[test]
+    fn test_mixed_event_types_all_stored() {
+        let db = in_memory_db();
+        db.log_model_usage("gpt-4o", 10, 5, 100).unwrap();
+        db.log_tool_execution("cmd.run", &serde_json::json!({}), true, 20, None)
+            .unwrap();
+        db.log_permission_event("tool_call", "cmd.run", "approved", None)
+            .unwrap();
+
+        let logs = db.get_audit_logs(None, None).unwrap();
+        assert_eq!(logs.len(), 3);
+        let types: Vec<&str> = logs
+            .iter()
+            .map(|l| l["event_type"].as_str().unwrap())
+            .collect();
+        assert!(types.contains(&"model_usage"));
+        assert!(types.contains(&"tool_call"));
+        assert!(types.contains(&"permission_check"));
+    }
+
+    #[test]
+    fn test_log_permission_event_denied_with_no_reason() {
+        let db = in_memory_db();
+        db.log_permission_event("tool_call", "cmd.run", "denied", None)
+            .unwrap();
+        let logs = db.get_audit_logs(None, None).unwrap();
+        assert_eq!(logs[0]["details"]["decision"], "denied");
+        assert!(logs[0]["details"]["reason"].is_null());
+    }
+
+    #[test]
+    fn test_log_tool_execution_stores_arguments() {
+        let db = in_memory_db();
+        let args = serde_json::json!({"program": "ls", "args": ["-la"]});
+        db.log_tool_execution("cmd.run", &args, true, 10, None)
+            .unwrap();
+        let logs = db.get_audit_logs(None, None).unwrap();
+        assert_eq!(logs[0]["details"]["arguments"]["program"], "ls");
+    }
 }

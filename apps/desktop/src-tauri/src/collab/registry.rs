@@ -423,4 +423,147 @@ mod tests {
         assert_eq!(msgs[0]["msg_type"], "ping");
         assert!(msgs[0]["task_id"].is_null());
     }
+
+    // ── Additional edge-case tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_list_agents_empty_team_returns_empty() {
+        let reg = in_memory_registry();
+        let agents = reg.list_agents("nonexistent-team").unwrap();
+        assert!(agents.is_empty());
+    }
+
+    #[test]
+    fn test_create_task_defaults_to_pending() {
+        let reg = in_memory_registry();
+        reg.upsert_agent(&make_agent("a1", "Alice-bot", true))
+            .unwrap();
+        let task = reg
+            .create_task("Check logs", None, None, Some("a1"))
+            .unwrap();
+        assert_eq!(task.status, TaskStatus::Pending);
+        assert!(task.result.is_none());
+    }
+
+    #[test]
+    fn test_update_task_status_in_progress() {
+        let reg = in_memory_registry();
+        reg.upsert_agent(&make_agent("a1", "Alice-bot", true))
+            .unwrap();
+        let task = reg.create_task("Build", None, None, Some("a1")).unwrap();
+        reg.update_task_status(&task.id, TaskStatus::InProgress, None)
+            .unwrap();
+        let tasks = reg.list_tasks(None, None).unwrap();
+        assert_eq!(tasks[0]["status"], "in_progress");
+    }
+
+    #[test]
+    fn test_update_task_status_cancelled() {
+        let reg = in_memory_registry();
+        reg.upsert_agent(&make_agent("a1", "Alice-bot", true))
+            .unwrap();
+        let task = reg.create_task("Cancelled work", None, None, Some("a1")).unwrap();
+        reg.update_task_status(&task.id, TaskStatus::Cancelled, None)
+            .unwrap();
+        let tasks = reg.list_tasks(None, None).unwrap();
+        assert_eq!(tasks[0]["status"], "cancelled");
+    }
+
+    #[test]
+    fn test_update_task_status_failed_with_error_result() {
+        let reg = in_memory_registry();
+        reg.upsert_agent(&make_agent("a1", "Alice-bot", true))
+            .unwrap();
+        let task = reg.create_task("Risky task", None, None, Some("a1")).unwrap();
+        let error_json = json!({"error": "timeout"});
+        reg.update_task_status(&task.id, TaskStatus::Failed, Some(&error_json))
+            .unwrap();
+        let tasks = reg.list_tasks(None, None).unwrap();
+        assert_eq!(tasks[0]["status"], "failed");
+        assert!(tasks[0]["result"].is_string());
+    }
+
+    #[test]
+    fn test_list_tasks_empty_on_fresh_registry() {
+        let reg = in_memory_registry();
+        let tasks = reg.list_tasks(None, None).unwrap();
+        assert!(tasks.is_empty());
+    }
+
+    #[test]
+    fn test_list_messages_empty_on_fresh_registry() {
+        let reg = in_memory_registry();
+        let msgs = reg.list_messages(None, None).unwrap();
+        assert!(msgs.is_empty());
+    }
+
+    #[test]
+    fn test_message_pagination() {
+        let reg = in_memory_registry();
+        reg.upsert_agent(&make_agent("a1", "Alice-bot", true))
+            .unwrap();
+        reg.upsert_agent(&make_agent("b1", "Bob-bot", false))
+            .unwrap();
+        // Insert 8 ping messages
+        for _ in 0..8 {
+            let msg = CollabMessage {
+                id: uuid::Uuid::new_v4().to_string(),
+                from_agent: "a1".into(),
+                to_agent: "b1".into(),
+                task_id: None,
+                msg_type: MsgType::Ping,
+                payload: json!({}),
+                timestamp: Utc::now(),
+            };
+            reg.save_message(&msg).unwrap();
+        }
+        let page1 = reg.list_messages(Some(4), Some(0)).unwrap();
+        let page2 = reg.list_messages(Some(4), Some(4)).unwrap();
+        assert_eq!(page1.len(), 4);
+        assert_eq!(page2.len(), 4);
+        // No id overlap
+        let ids1: Vec<String> = page1.iter().map(|m| m["id"].as_str().unwrap().to_string()).collect();
+        let ids2: Vec<String> = page2.iter().map(|m| m["id"].as_str().unwrap().to_string()).collect();
+        assert!(ids1.iter().all(|id| !ids2.contains(id)));
+    }
+
+    #[test]
+    fn test_save_task_result_and_task_update_messages() {
+        let reg = in_memory_registry();
+        reg.upsert_agent(&make_agent("a1", "Alice-bot", true))
+            .unwrap();
+        reg.upsert_agent(&make_agent("b1", "Bob-bot", false))
+            .unwrap();
+        let task = reg
+            .create_task("Analysis", None, Some("b1"), Some("a1"))
+            .unwrap();
+
+        let update_msg = CollabMessage {
+            id: uuid::Uuid::new_v4().to_string(),
+            from_agent: "b1".into(),
+            to_agent: "a1".into(),
+            task_id: Some(task.id.clone()),
+            msg_type: MsgType::TaskUpdate,
+            payload: json!({"status": "in_progress"}),
+            timestamp: Utc::now(),
+        };
+        reg.save_message(&update_msg).unwrap();
+
+        let result_msg = CollabMessage {
+            id: uuid::Uuid::new_v4().to_string(),
+            from_agent: "b1".into(),
+            to_agent: "a1".into(),
+            task_id: Some(task.id.clone()),
+            msg_type: MsgType::TaskResult,
+            payload: json!({"summary": "done"}),
+            timestamp: Utc::now(),
+        };
+        reg.save_message(&result_msg).unwrap();
+
+        let msgs = reg.list_messages(None, None).unwrap();
+        assert_eq!(msgs.len(), 2);
+        let types: Vec<&str> = msgs.iter().map(|m| m["msg_type"].as_str().unwrap()).collect();
+        assert!(types.contains(&"task_update"));
+        assert!(types.contains(&"task_result"));
+    }
 }

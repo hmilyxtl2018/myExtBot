@@ -88,3 +88,133 @@ pub enum AgentEvent {
 impl AgentEvent {
     pub const EVENT_NAME: &'static str = "agent-event";
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── AgentStatus ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_agent_status_variants_are_distinct() {
+        assert_ne!(AgentStatus::Idle, AgentStatus::Thinking);
+        assert_ne!(AgentStatus::Thinking, AgentStatus::WaitingApproval);
+        assert_ne!(AgentStatus::WaitingApproval, AgentStatus::RunningTool);
+        assert_ne!(AgentStatus::RunningTool, AgentStatus::Completed);
+        assert_ne!(AgentStatus::Completed, AgentStatus::Failed);
+        assert_ne!(AgentStatus::Failed, AgentStatus::Stopped);
+    }
+
+    #[test]
+    fn test_agent_status_clone_equals_original() {
+        let s = AgentStatus::RunningTool;
+        assert_eq!(s.clone(), AgentStatus::RunningTool);
+    }
+
+    #[test]
+    fn test_agent_status_serializes_to_string() {
+        let json = serde_json::to_value(AgentStatus::Thinking).unwrap();
+        assert_eq!(json.as_str().unwrap(), "Thinking");
+        let json = serde_json::to_value(AgentStatus::WaitingApproval).unwrap();
+        assert_eq!(json.as_str().unwrap(), "WaitingApproval");
+    }
+
+    #[test]
+    fn test_agent_status_round_trips_through_json() {
+        let statuses = [
+            AgentStatus::Idle,
+            AgentStatus::Thinking,
+            AgentStatus::WaitingApproval,
+            AgentStatus::RunningTool,
+            AgentStatus::Stopped,
+            AgentStatus::Completed,
+            AgentStatus::Failed,
+        ];
+        for s in &statuses {
+            let json = serde_json::to_value(s).unwrap();
+            let back: AgentStatus = serde_json::from_value(json).unwrap();
+            assert_eq!(back, *s);
+        }
+    }
+
+    // ── AgentEvent ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_event_name_constant() {
+        assert_eq!(AgentEvent::EVENT_NAME, "agent-event");
+    }
+
+    #[test]
+    fn test_status_changed_event_serializes_with_type_tag() {
+        let event = AgentEvent::StatusChanged {
+            status: AgentStatus::Idle,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "StatusChanged");
+        assert_eq!(json["status"], "Idle");
+    }
+
+    #[test]
+    fn test_emergency_stop_event_serializes_with_type_tag() {
+        let event = AgentEvent::EmergencyStop;
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "EmergencyStop");
+    }
+
+    #[test]
+    fn test_chat_message_event_contains_message_field() {
+        let msg = ChatMessage {
+            id: "msg-1".into(),
+            role: "user".into(),
+            content: "hello".into(),
+            timestamp: chrono::Utc::now(),
+        };
+        let event = AgentEvent::ChatMessage { message: msg };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "ChatMessage");
+        assert_eq!(json["message"]["role"], "user");
+        assert_eq!(json["message"]["content"], "hello");
+    }
+
+    // ── RiskLevel ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_risk_level_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_value(RiskLevel::Low).unwrap().as_str().unwrap(),
+            "low"
+        );
+        assert_eq!(
+            serde_json::to_value(RiskLevel::Medium).unwrap().as_str().unwrap(),
+            "medium"
+        );
+        assert_eq!(
+            serde_json::to_value(RiskLevel::High).unwrap().as_str().unwrap(),
+            "high"
+        );
+    }
+
+    // ── PlanStepStatus ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_plan_step_status_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_value(PlanStepStatus::Pending).unwrap().as_str().unwrap(),
+            "pending"
+        );
+        assert_eq!(
+            serde_json::to_value(PlanStepStatus::Done).unwrap().as_str().unwrap(),
+            "done"
+        );
+        assert_eq!(
+            serde_json::to_value(PlanStepStatus::Failed).unwrap().as_str().unwrap(),
+            "failed"
+        );
+        assert_eq!(
+            serde_json::to_value(PlanStepStatus::Skipped).unwrap().as_str().unwrap(),
+            "skipped"
+        );
+    }
+}
