@@ -1,0 +1,15 @@
+{
+  "name": "myextbot",
+  "version": "0.1.0",
+  "description": "myExtBot – digital-twin desktop bot (Tauri + Rust + plain HTML)",
+  "private": true,
+  "scripts": {
+    "serve": "npx serve@14 src --listen 1420 --no-clipboard",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.2"
+  }
+}
