@@ -12,6 +12,31 @@ Features:
 
 ---
 
+## 🔑 API Keys — what do I need to provide?
+
+**You need exactly one LLM provider key.** Pick whichever row suits you and set only those variables in `.env`:
+
+| Provider | Required key | Where to get it | Cost | Local? |
+|----------|-------------|-----------------|------|--------|
+| **OpenAI** _(default)_ | `OPENAI_API_KEY` | <https://platform.openai.com/api-keys> | Pay-per-token | ☁️ Cloud |
+| **Anthropic** | `ANTHROPIC_API_KEY` | <https://console.anthropic.com/settings/keys> | Pay-per-token | ☁️ Cloud |
+| **Ollama** | _(none)_ | [ollama.com/download](https://ollama.com/download) | Free | 🖥 Local |
+
+> **TL;DR for most users:**
+> ```
+> # Fastest start: use OpenAI
+> LLM_PROVIDER=openai
+> OPENAI_API_KEY=sk-...
+>
+> # Free & private: use Ollama (install ollama, then `ollama pull llama3.2`)
+> LLM_PROVIDER=ollama
+> ```
+
+No other external API keys are required. The rest of the variables in `.env.example`
+(`AGENT_NAME`, `RUST_LOG`, etc.) are optional configuration — the app works without them.
+
+---
+
 ## 🌐 Live demo (no install)
 
 The frontend demo is auto-deployed to GitHub Pages on every push to `main`:
