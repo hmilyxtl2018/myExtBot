@@ -6,15 +6,21 @@ use crate::agent::AgentState;
 use crate::audit::AuditDb;
 use crate::collab::types::{AgentIdentity, CollabMessage, MsgType, TaskStatus};
 use crate::collab::{CollabBus, TeamRegistry};
-use crate::events::{AgentEvent, AgentStatus, ChatMessage};
+use crate::events::{AgentEvent, AgentStatus, ChatMessage, ToolCallResult};
 use crate::permissions::PermissionManager;
 
 /// Send a user chat message and kick off the agent.
+///
+/// Immediately echoes the user message as a `ChatMessage` event and transitions
+/// the agent to `Thinking`.  The actual LLM call is spawned on a background
+/// Tokio task so the IPC call returns quickly; the response arrives as a second
+/// `ChatMessage` event emitted by the background task.
 #[tauri::command]
 pub async fn send_message(
     content: String,
     agent: State<'_, AgentState>,
     db: State<'_, AuditDb>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let msg_id = uuid::Uuid::new_v4().to_string();
 
@@ -28,15 +34,49 @@ pub async fn send_message(
         .emit(AgentEvent::ChatMessage { message: msg })
         .map_err(|e| e.to_string())?;
 
-    // Log the state transition to Thinking, recording it as a model_usage event
-    // placeholder so the audit trail shows when LLM calls begin.
-    db.log_model_usage("pending", 0, 0, 0)
-        .map_err(|e| e.to_string())?;
-
-    // Transition to Thinking (LLM call would happen here)
     agent
         .transition(AgentStatus::Thinking)
         .map_err(|e| e.to_string())?;
+
+    // Log that an LLM call is about to start (tokens filled in on completion).
+    let _ = db.log_model_usage("pending", 0, 0, 0);
+
+    // Spawn the LLM call so the IPC thread is not blocked.
+    tokio::spawn(async move {
+        let agent = app_handle.state::<AgentState>();
+        let db    = app_handle.state::<AuditDb>();
+
+        match crate::llm::complete(&content).await {
+            Ok(resp) => {
+                let _ = db.log_model_usage(
+                    &resp.model,
+                    resp.prompt_tokens,
+                    resp.completion_tokens,
+                    resp.duration_ms,
+                );
+                let reply = ChatMessage {
+                    id:        uuid::Uuid::new_v4().to_string(),
+                    role:      "assistant".into(),
+                    content:   resp.text,
+                    timestamp: chrono::Utc::now(),
+                };
+                let _ = agent.emit(AgentEvent::ChatMessage { message: reply });
+                let _ = agent.transition(AgentStatus::Completed);
+            }
+            Err(e) => {
+                tracing::error!("LLM error: {e}");
+                // Emit the error as a chat message so the user sees it.
+                let err_msg = ChatMessage {
+                    id:        uuid::Uuid::new_v4().to_string(),
+                    role:      "assistant".into(),
+                    content:   format!("⚠️ {e}"),
+                    timestamp: chrono::Utc::now(),
+                };
+                let _ = agent.emit(AgentEvent::ChatMessage { message: err_msg });
+                let _ = agent.transition(AgentStatus::Failed);
+            }
+        }
+    });
 
     Ok(())
 }
@@ -56,6 +96,10 @@ pub fn emergency_stop(
 }
 
 /// User approves a pending tool call.
+///
+/// Grants the permission, transitions the agent to `RunningTool`, then spawns
+/// a background task that executes the tool, emits a `ToolCallResult` event,
+/// and transitions the agent back to `Completed` or `Failed`.
 #[tauri::command]
 pub fn approve_tool_call(
     call_id: String,
@@ -65,6 +109,7 @@ pub fn approve_tool_call(
     agent: State<'_, AgentState>,
     perms: State<'_, PermissionManager>,
     db: State<'_, AuditDb>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     if cache_session {
         perms.grant_session(&tool);
@@ -72,13 +117,111 @@ pub fn approve_tool_call(
     // Log permission approval
     db.log_permission_event("tool_call", &tool, "approved", Some(&call_id))
         .map_err(|e| e.to_string())?;
-    // Log tool execution start (duration will be filled in when result arrives)
-    db.log_tool_execution(&tool, &params, true, 0, None)
-        .map_err(|e| e.to_string())?;
+
     agent
-        .transition(crate::events::AgentStatus::RunningTool)
+        .transition(AgentStatus::RunningTool)
         .map_err(|e| e.to_string())?;
+
+    // Execute the tool in a background task so the IPC call returns immediately.
+    let tool_name   = tool.clone();
+    let params_copy = params.clone();
+    let call_id_copy = call_id.clone();
+
+    tokio::spawn(async move {
+        let agent = app_handle.state::<AgentState>();
+        let db    = app_handle.state::<AuditDb>();
+
+        let start = std::time::Instant::now();
+        let result = run_tool(&tool_name, &params_copy).await;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(output) => {
+                let _ = db.log_tool_execution(&tool_name, &params_copy, true, duration_ms, None);
+                let ev = ToolCallResult {
+                    id:          call_id_copy,
+                    tool:        tool_name,
+                    success:     true,
+                    output:      Some(output),
+                    error:       None,
+                    duration_ms,
+                    timestamp:   chrono::Utc::now(),
+                };
+                let _ = agent.emit(AgentEvent::ToolCallResult { result: ev });
+                let _ = agent.transition(AgentStatus::Completed);
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                let _ = db.log_tool_execution(&tool_name, &params_copy, false, duration_ms, Some(&err_str));
+                let ev = ToolCallResult {
+                    id:          call_id_copy,
+                    tool:        tool_name,
+                    success:     false,
+                    output:      None,
+                    error:       Some(err_str),
+                    duration_ms,
+                    timestamp:   chrono::Utc::now(),
+                };
+                let _ = agent.emit(AgentEvent::ToolCallResult { result: ev });
+                let _ = agent.transition(AgentStatus::Failed);
+            }
+        }
+    });
+
     Ok(())
+}
+
+/// Dispatch a tool call to the appropriate implementation.
+async fn run_tool(tool: &str, params: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    match tool {
+        "fs.readFile" => {
+            let path = params["path"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("fs.readFile: missing `path` param"))?;
+            crate::tools::fs::read_file(path).await
+        }
+        "fs.applyPatch" => {
+            let path = params["path"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("fs.applyPatch: missing `path` param"))?;
+            let patch = params["patch"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("fs.applyPatch: missing `patch` param"))?;
+            crate::tools::fs::apply_patch(path, patch).await
+        }
+        "cmd.run" => {
+            let program = params["program"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("cmd.run: missing `program` param"))?;
+            let args: Vec<String> = params["args"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|v| {
+                            v.as_str()
+                                .map(str::to_string)
+                                .ok_or_else(|| anyhow::anyhow!("cmd.run: all `args` elements must be strings"))
+                        })
+                        .collect::<anyhow::Result<Vec<_>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            let cwd = params["cwd"].as_str();
+            crate::tools::cmd::run(program, &args, cwd).await
+        }
+        "net.fetch" => {
+            let url = params["url"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("net.fetch: missing `url` param"))?;
+            let method  = params["method"].as_str().unwrap_or("GET");
+            let headers = &params["headers"];
+            let body    = params["body"].as_str();
+            crate::tools::net::fetch(url, method, headers, body).await
+        }
+        other => Err(anyhow::anyhow!(
+            "Tool '{other}' execution is not yet implemented"
+        )),
+    }
 }
 
 /// User denies a pending tool call.
@@ -97,7 +240,7 @@ pub fn deny_tool_call(
     db.log_tool_execution(&tool, &params, false, 0, Some("denied by user"))
         .map_err(|e| e.to_string())?;
     agent
-        .transition(crate::events::AgentStatus::Idle)
+        .transition(AgentStatus::Idle)
         .map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -4,6 +4,7 @@ mod collab;
 mod commands;
 mod db;
 mod events;
+mod llm;
 mod permissions;
 mod tools;
 
@@ -12,7 +13,10 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize tracing
+    // Load .env file from the working directory (silently ignored if absent).
+    dotenvy::dotenv().ok();
+
+    // Initialize tracing (respects RUST_LOG env var).
     fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
@@ -38,6 +42,29 @@ pub fn run() {
             // Initialize multi-agent collaboration layer
             let collab_conn = db::open(&app_handle)?;
             let registry = collab::TeamRegistry::new(collab_conn);
+
+            // Register the local bot identity from env vars (or sensible defaults).
+            let agent_id = std::env::var("AGENT_ID")
+                .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
+            let agent_name = std::env::var("AGENT_NAME")
+                .unwrap_or_else(|_| "MyBot".into());
+            let team_id = std::env::var("AGENT_TEAM_ID")
+                .unwrap_or_else(|_| "team-default".into());
+            let agent_role = std::env::var("AGENT_ROLE").ok();
+
+            let identity = collab::AgentIdentity {
+                id:       agent_id,
+                name:     agent_name,
+                role:     agent_role,
+                endpoint: None,
+                team_id,
+                is_local: true,
+                last_seen: chrono::Utc::now(),
+            };
+            if let Err(e) = registry.upsert_agent(&identity) {
+                tracing::warn!("Could not register local agent identity: {e}");
+            }
+
             app.manage(registry);
             let bus = collab::CollabBus::new();
             app.manage(bus);

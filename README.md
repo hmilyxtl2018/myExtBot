@@ -181,8 +181,9 @@ All configuration is via environment variables in `.env` (see `.env.example`):
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2` | Locally-pulled Ollama model |
 | `AGENT_ID` | auto-generated UUID | Stable identity for this bot instance |
-| `AGENT_NAME` | `Alice-bot` | Display name |
-| `AGENT_TEAM_ID` | `team-alpha` | Team the bot belongs to |
+| `AGENT_NAME` | `MyBot` | Display name shown in the Team Board |
+| `AGENT_ROLE` | _(none)_ | Optional role tag, e.g. `pm` or `backend` |
+| `AGENT_TEAM_ID` | `team-default` | Team the bot belongs to |
 | `RUST_LOG` | `info` | Tracing level (`error`/`warn`/`info`/`debug`/`trace`) |
 
 ---
@@ -228,6 +229,8 @@ cp apps/desktop/src/index.html docs/index.html
 | Window opens but shows blank page | Make sure `npm run serve` is running on port 1420 before the window appears |
 | `window.__TAURI__ is undefined` | Ensure `"withGlobalTauri": true` is set in `tauri.conf.json` (already done) |
 | LLM responses are mock data | You are running the browser demo; in Tauri mode, set a real API key in `.env` |
+| `⚠️ OPENAI_API_KEY is not set` | Copy `.env.example` → `.env` and fill in your API key |
+| `⚠️ Ollama request failed` | Run `ollama serve` and pull a model: `ollama pull llama3.2` |
 
 ---
 

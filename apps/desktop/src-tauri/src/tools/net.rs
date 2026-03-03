@@ -1,4 +1,4 @@
-//! Network fetch tool definition and placeholder.
+//! Network fetch tool definition and implementation.
 
 #![allow(dead_code)]
 
@@ -31,8 +31,41 @@ pub fn fetch_def() -> ToolDef {
     }
 }
 
-/// Placeholder: perform an HTTP request.
-pub async fn fetch(_url: &str, _method: &str, _headers: &Value, _body: Option<&str>) -> Result<Value> {
-    // TODO: implement using reqwest with allowlist check
-    Err(anyhow::anyhow!("net.fetch is not yet implemented"))
+/// Perform an HTTP request.
+///
+/// `headers` should be a JSON object of `{ "Header-Name": "value" }`.
+/// `body` must be valid UTF-8 text (JSON, form-encoded, plain text, etc.);
+/// binary payloads are not supported.
+/// Returns `{ "status": <http status code>, "body": "<response text>" }`.
+pub async fn fetch(url: &str, method: &str, headers: &Value, body: Option<&str>) -> Result<Value> {
+    let method_parsed = reqwest::Method::from_bytes(method.as_bytes())
+        .map_err(|_| anyhow::anyhow!("net.fetch: invalid HTTP method '{method}'"))?;
+
+    let client = reqwest::Client::new();
+    let mut req = client.request(method_parsed, url);
+
+    if let Some(h) = headers.as_object() {
+        for (k, v) in h {
+            if let Some(v_str) = v.as_str() {
+                req = req.header(k.as_str(), v_str);
+            }
+        }
+    }
+
+    if let Some(b) = body {
+        req = req.body(b.to_string());
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("HTTP request to {url} failed: {e}"))?;
+
+    let status = resp.status().as_u16();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read HTTP response body: {e}"))?;
+
+    Ok(json!({ "status": status, "body": text }))
 }
