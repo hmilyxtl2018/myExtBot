@@ -12,6 +12,30 @@ Features:
 
 ---
 
+## 🖼 Screenshots
+
+### 💬 Chat — Solo Bot mode
+> Chat with your personal AI agent; the sidebar shows live agent status, the current plan, and any pending tool-approval requests.
+
+![Chat view](https://github.com/user-attachments/assets/941afd7f-5879-425a-afa1-93334124040f)
+
+### 🗂 Team Board — multi-agent collaboration
+> Kanban board (Pending / In Progress / Done) shared across the agent fleet, plus a live inter-agent message feed on the right.
+
+![Team Board view](https://github.com/user-attachments/assets/e96973c2-9838-4831-8328-d79a6581e5f1)
+
+### 📋 Audit Log
+> Every model call, tool execution, and permission decision is recorded in SQLite and shown here in paginated, filterable rows.
+
+![Audit Log view](https://github.com/user-attachments/assets/99f32fdb-934b-4982-8a3c-622b6b7392c0)
+
+### 🔍 Intelligence Watch
+> Domain signal feed — the bot periodically scans configured sources and surfaces ranked, colour-coded insights.
+
+![Intel Watch view](https://github.com/user-attachments/assets/47b72fb4-e5ff-43b3-bef1-0c84fad46986)
+
+---
+
 ## 🔑 API Keys — what do I need to provide?
 
 **You need exactly one LLM provider key.** Pick whichever row suits you and set only those variables in `.env`:
