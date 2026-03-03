@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>myExtBot</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Header ────────────────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-logo">
+      <div class="logo-icon">🤖</div>
+      myExtBot
+    </div>
+
+    <div class="header-status">
+      <div id="status-dot" class="status-dot idle" aria-hidden="true"></div>
+      <span id="status-label">⬤ Idle</span>
+    </div>
+
+    <div class="header-spacer"></div>
+
+    <!-- Mode toggle: entry point selector -->
+    <div class="mode-switch" id="mode-switch" aria-label="Switch mode">
+      <button class="mode-btn active" data-mode="solo" title="Your personal bot — chat, files, commands">🤖 Solo Bot</button>
+      <button class="mode-btn"        data-mode="team" title="Multi-agent team collaboration">👥 Team</button>
+    </div>
+
+    <div class="mode-nav-divider" aria-hidden="true"></div>
+
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="chat"  data-mode-only="solo">💬 Chat</button>
+      <button class="nav-tab"        data-tab="team"  data-mode-only="team">🗂 Board</button>
+      <button class="nav-tab"        data-tab="audit">📋 Audit</button>
+      <button class="nav-tab"        data-tab="intel">🔍 Intel</button>
+    </nav>
+
+    <button id="btn-stop" class="btn-stop">⛔ Emergency Stop</button>
+  </header>
+
+  <!-- ── Content ───────────────────────────────────────────────────────────── -->
+  <main class="content">
+
+    <!-- ================================================================
+         CHAT VIEW
+         ================================================================ -->
+    <section id="view-chat" class="view chat-view active">
+
+      <!-- Left: conversation thread + input -->
+      <div class="chat-main">
+        <div id="chat-messages" class="chat-messages">
+          <!-- Messages injected by app.js -->
+        </div>
+
+        <div class="chat-input-bar">
+          <div class="chat-input-wrap">
+            <textarea
+              id="chat-input"
+              class="chat-input"
+              rows="1"
+              placeholder="Ask your bot anything…  (Shift+Enter for new line)"
+            ></textarea>
+          </div>
+          <button id="btn-send" class="btn-send">Send ↵</button>
+        </div>
+      </div>
+
+      <!-- Right: status + plan + tool approval -->
+      <aside class="chat-sidebar">
+
+        <!-- Agent status -->
+        <div class="sidebar-section">
+          <div class="sidebar-title">Agent Status</div>
+          <div class="status-card">
+            <div class="status-row">
+              <div id="sc-status-dot" class="status-dot waiting" aria-hidden="true"></div>
+              <span id="sc-status-label">⬤ Awaiting approval</span>
+            </div>
+            <div class="status-label">Alice-bot · team-alpha</div>
+          </div>
+        </div>
+
+        <!-- Plan steps -->
+        <div class="sidebar-section">
+          <div class="sidebar-title">Plan</div>
+          <div id="plan-steps" class="plan-steps">
+            <!-- Rendered by app.js -->
+          </div>
+        </div>
+
+        <!-- Pending tool approval -->
+        <div class="sidebar-section">
+          <div class="sidebar-title">Tool Approval</div>
+          <div id="pending-approval">
+            <!-- Rendered by app.js -->
+          </div>
+        </div>
+
+        <!-- Switch-to-Team nudge -->
+        <div class="sidebar-section mode-hint" id="hint-goto-team">
+          <button class="mode-hint-btn" id="btn-goto-team">
+            👥 Switch to Team Board →
+          </button>
+          <p class="mode-hint-desc">Delegate tasks to other agents &amp; track progress collaboratively.</p>
+        </div>
+
+      </aside>
+    </section><!-- /chat-view -->
+
+
+    <!-- ================================================================
+         TEAM VIEW
+         ================================================================ -->
+    <section id="view-team" class="view team-view">
+
+      <!-- Back-to-solo hint bar -->
+      <div class="mode-crumb" id="hint-goto-solo">
+        <button class="mode-crumb-btn" id="btn-goto-solo">← Back to Solo Chat</button>
+        <span class="mode-crumb-label">Team collaboration mode — delegate tasks across your agent fleet</span>
+      </div>
+
+      <!-- Agent chips bar -->
+      <div class="team-top">
+        <span class="team-section-label">Team Members</span>
+        <div id="agent-chips" style="display:flex;gap:10px;flex-wrap:nowrap">
+          <!-- Rendered by app.js -->
+        </div>
+      </div>
+
+      <div class="team-body">
+
+        <!-- Task board -->
+        <div class="task-board-wrap">
+          <div class="task-board-header">
+            <h3>Task Board</h3>
+            <button class="btn-new-task" id="btn-new-task">＋ New Task</button>
+          </div>
+
+          <div class="task-board">
+            <!-- Pending column -->
+            <div class="task-column">
+              <div class="task-col-header">
+                <span class="task-col-title">⬜ Pending <span id="col-count-pending" class="task-col-count">0</span></span>
+              </div>
+              <div id="col-pending">
+                <!-- Rendered by app.js -->
+              </div>
+            </div>
+
+            <!-- In Progress column -->
+            <div class="task-column">
+              <div class="task-col-header">
+                <span class="task-col-title">🔄 In Progress <span id="col-count-in-progress" class="task-col-count">0</span></span>
+              </div>
+              <div id="col-in-progress">
+                <!-- Rendered by app.js -->
+              </div>
+            </div>
+
+            <!-- Done column -->
+            <div class="task-column">
+              <div class="task-col-header">
+                <span class="task-col-title">✅ Done <span id="col-count-done" class="task-col-count">0</span></span>
+              </div>
+              <div id="col-done">
+                <!-- Rendered by app.js -->
+              </div>
+            </div>
+          </div>
+        </div><!-- /task-board-wrap -->
+
+        <!-- Collab messages panel -->
+        <div class="team-messages-panel">
+          <div class="panel-header">
+            Inter-agent Messages
+            <span class="panel-badge">live</span>
+          </div>
+          <div id="collab-message-list" class="collab-messages">
+            <!-- Rendered by app.js -->
+          </div>
+        </div>
+
+      </div><!-- /team-body -->
+    </section><!-- /team-view -->
+
+
+    <!-- ================================================================
+         AUDIT VIEW
+         ================================================================ -->
+    <section id="view-audit" class="view audit-view">
+
+      <div class="audit-toolbar">
+        <h3>📋 Audit Timeline</h3>
+        <div class="audit-filter">
+          Filter:
+          <select id="audit-filter-select" class="filter-select">
+            <option value="all">All events</option>
+            <option value="model_usage">Model usage</option>
+            <option value="tool_call">Tool calls</option>
+            <option value="permission_check">Permissions</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="audit-list" class="audit-list">
+        <!-- Rendered by app.js -->
+      </div>
+
+    </section><!-- /audit-view -->
+
+
+    <!-- ================================================================
+         INTEL WATCH VIEW — Military & AI Technology Trend Analysis
+         ================================================================ -->
+    <section id="view-intel" class="view intel-view">
+
+      <!-- Toolbar -->
+      <div class="intel-toolbar">
+        <div class="intel-toolbar-left">
+          <h3>🔍 Intelligence Watch</h3>
+          <div class="intel-scan-chip">
+            <div class="status-dot running" aria-hidden="true"></div>
+            <span id="intel-scan-chip-text">Tracking 2 domains · Last scan: —</span>
+          </div>
+        </div>
+        <div class="intel-toolbar-right">
+          <span id="intel-next-scan" class="intel-next-scan">Next scan in —</span>
+          <button class="btn-intel-refresh" id="btn-intel-refresh">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <!-- Domain summary cards -->
+      <div class="intel-domains" id="intel-domains-container">
+        <div class="domain-card" id="domain-card-military">
+          <!-- Rendered by app.js -->
+        </div>
+        <div class="domain-card" id="domain-card-ai-tech">
+          <!-- Rendered by app.js -->
+        </div>
+      </div>
+
+      <!-- Signal feed -->
+      <div class="intel-feed-section">
+        <div class="intel-feed-header">
+          <span class="intel-feed-title">
+            📰 Recent Signals
+            <span id="intel-signal-count" class="intel-signal-count"></span>
+          </span>
+          <div class="intel-feed-filters">
+            <select id="intel-domain-filter" class="filter-select">
+              <option value="all">All domains</option>
+              <option value="military">🎖 Military</option>
+              <option value="ai_tech">🤖 AI Technology</option>
+            </select>
+            <select id="intel-sig-filter" class="filter-select">
+              <option value="all">All significance</option>
+              <option value="critical">🔴 Critical</option>
+              <option value="high">🟠 High</option>
+              <option value="medium">🟡 Medium</option>
+              <option value="low">🔵 Low</option>
+            </select>
+            <select id="intel-sort-select" class="filter-select">
+              <option value="newest">⬇ Newest first</option>
+              <option value="oldest">⬆ Oldest first</option>
+              <option value="significance">🔴 Significance</option>
+            </select>
+          </div>
+        </div>
+        <div id="intel-signal-list" class="intel-signal-list">
+          <!-- Rendered by app.js -->
+        </div>
+      </div>
+
+    </section><!-- /intel-view -->
+
+  </main><!-- /content -->
+
+</div><!-- /app -->
+
+<!-- ── New Task Modal ─────────────────────────────────────────────────────── -->
+<div id="modal-new-task" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-title">Delegate New Task</div>
+
+    <div class="form-group">
+      <label class="form-label" for="task-title-input">Title *</label>
+      <input id="task-title-input" class="form-input" type="text" placeholder="e.g. Add unit tests for login flow" />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="task-desc-input">Description</label>
+      <textarea id="task-desc-input" class="form-textarea" placeholder="Acceptance criteria, context…"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="task-assignee-select">Assign to</label>
+      <select id="task-assignee-select" class="form-select">
+        <option value="">— Unassigned —</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button id="btn-cancel-task" class="btn-secondary">Cancel</button>
+      <button id="btn-create-task" class="btn-primary">Create Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast container ────────────────────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+target/
+package-lock.json
+
+# Build outputs (generated; not committed)
+build/
+*.d.ts.map
+
+# Tauri build outputs and generated code
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/dist/
+
+# Env / secrets
+.env
+*.env
+*.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local fonts (large binary assets – add manually if needed)
+apps/desktop/public/fonts/

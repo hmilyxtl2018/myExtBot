@@ -1,0 +1,47 @@
+[package]
+name = "myextbot"
+version = "0.1.0"
+description = "myExtBot – digital twin desktop bot"
+authors = []
+edition = "2021"
+
+# See more keys and definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "myextbot_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+jsonschema = "0.18"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+dotenvy = "0.15"
+diffy = "0.4"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+tempfile = "3"
+
+[[example]]
+name = "llm_smoke"
+required-features = []
+
+[[example]]
+name = "net_smoke"
+required-features = []
