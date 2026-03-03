@@ -24,6 +24,12 @@ pub struct ToolRegistry {
     tools: HashMap<&'static str, ToolDef>,
 }
 
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolRegistry {
     pub fn new() -> Self {
         let mut registry = ToolRegistry {

@@ -37,3 +37,11 @@ custom-protocol = ["tauri/custom-protocol"]
 
 [dev-dependencies]
 tempfile = "3"
+
+[[example]]
+name = "llm_smoke"
+required-features = []
+
+[[example]]
+name = "net_smoke"
+required-features = []

@@ -4,9 +4,9 @@ mod collab;
 mod commands;
 mod db;
 mod events;
-mod llm;
+pub mod llm;
 mod permissions;
-mod tools;
+pub mod tools;
 
 use tauri::Manager;
 use tracing_subscriber::{fmt, EnvFilter};
