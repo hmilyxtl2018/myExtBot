@@ -95,3 +95,70 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    #[test]
+    fn test_run_migrations_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        // First run creates all tables.
+        run_migrations(&conn).unwrap();
+        // Second run must not fail (all CREATE TABLE statements use IF NOT EXISTS).
+        run_migrations(&conn).unwrap();
+    }
+
+    #[test]
+    fn test_run_migrations_creates_all_expected_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let expected_tables = [
+            "audit_logs",
+            "sessions",
+            "agents",
+            "tasks",
+            "collab_messages",
+        ];
+        for table in &expected_tables {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    rusqlite::params![table],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            assert_eq!(count, 1, "expected table '{table}' to exist after migration");
+        }
+    }
+
+    #[test]
+    fn test_run_migrations_enables_foreign_keys() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        let fk_enabled: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(fk_enabled, 1, "PRAGMA foreign_keys should be ON after migration");
+    }
+
+    #[test]
+    fn test_audit_logs_table_has_correct_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        // Insert and select to verify column names are correct.
+        conn.execute(
+            "INSERT INTO audit_logs (timestamp, event_type, details) VALUES ('2024-01-01T00:00:00Z', 'test', '{}')",
+            [],
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM audit_logs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+}

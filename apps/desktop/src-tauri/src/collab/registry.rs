@@ -131,6 +131,8 @@ impl TeamRegistry {
     }
 
     /// Update the status (and optionally the result JSON) of an existing task.
+    ///
+    /// Returns `Err` when no task with the given `task_id` exists.
     pub fn update_task_status(
         &self,
         task_id: &str,
@@ -140,10 +142,13 @@ impl TeamRegistry {
         let now = Utc::now().to_rfc3339();
         let result_str = result.map(|v| v.to_string());
         let conn = self.conn.lock().unwrap();
-        conn.execute(
+        let affected = conn.execute(
             "UPDATE tasks SET status = ?1, result = ?2, updated_at = ?3 WHERE id = ?4",
             params![status.as_str(), result_str, now, task_id],
         )?;
+        if affected == 0 {
+            return Err(anyhow::anyhow!("task '{task_id}' not found"));
+        }
         Ok(())
     }
 
@@ -565,5 +570,27 @@ mod tests {
         let types: Vec<&str> = msgs.iter().map(|m| m["msg_type"].as_str().unwrap()).collect();
         assert!(types.contains(&"task_update"));
         assert!(types.contains(&"task_result"));
+    }
+
+    #[test]
+    fn test_update_task_status_nonexistent_task_returns_error() {
+        let reg = in_memory_registry();
+        let result = reg.update_task_status("nonexistent-uuid", TaskStatus::Done, None);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("nonexistent-uuid"),
+            "error should name the missing task, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_list_agents_unknown_team_returns_empty() {
+        let reg = in_memory_registry();
+        // Populate a different team.
+        reg.upsert_agent(&make_agent("a1", "Bot-A", false)).unwrap();
+        // Querying a team that has no agents should return empty, not an error.
+        let agents = reg.list_agents("team-unknown").unwrap();
+        assert!(agents.is_empty());
     }
 }

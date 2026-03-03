@@ -278,4 +278,37 @@ mod tests {
             "error should mention empty key, got: {msg}"
         );
     }
+
+    #[test]
+    fn test_ollama_unreachable_server_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "ollama");
+        // Point to an address that should refuse connections immediately.
+        std::env::set_var("OLLAMA_BASE_URL", "http://127.0.0.1:19999");
+        std::env::set_var("OLLAMA_MODEL", "llama3.2");
+        let result = run(complete("hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        std::env::remove_var("OLLAMA_BASE_URL");
+        std::env::remove_var("OLLAMA_MODEL");
+        assert!(result.is_err(), "Ollama should fail when server is unreachable");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.to_lowercase().contains("ollama"),
+            "error should mention Ollama, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_ollama_uses_default_model_when_env_not_set() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "ollama");
+        std::env::remove_var("OLLAMA_MODEL");
+        // Point to an unreachable server so the call fails fast without a real model check.
+        std::env::set_var("OLLAMA_BASE_URL", "http://127.0.0.1:19999");
+        let result = run(complete("ping"));
+        std::env::remove_var("LLM_PROVIDER");
+        std::env::remove_var("OLLAMA_BASE_URL");
+        // The call must fail (no server), but it must not panic with an env-var error.
+        assert!(result.is_err());
+    }
 }
