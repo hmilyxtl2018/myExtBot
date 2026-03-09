@@ -1,6 +1,6 @@
 //! Agent state machine.
 //!
-//! States: Idle → Thinking → WaitingApproval → RunningTool → Completed/Failed
+//! States: Idle → Planning → WaitingPlanApproval → Thinking → WaitingApproval → RunningTool → Completed/Failed
 //!         Any state → Stopped (emergency stop)
 
 #![allow(dead_code)]
@@ -35,6 +35,10 @@ pub struct AgentState {
     status: Arc<Mutex<AgentStatus>>,
     cancel_token: Arc<Mutex<Option<CancelToken>>>,
     session_id: String,
+    /// Oneshot sender for plan approval (true = approved, false = denied).
+    plan_approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
+    /// Oneshot sender for tool-call approval (true = approved, false = denied).
+    tool_approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
 }
 
 impl AgentState {
@@ -45,6 +49,8 @@ impl AgentState {
             status: Arc::new(Mutex::new(AgentStatus::Idle)),
             cancel_token: Arc::new(Mutex::new(None)),
             session_id,
+            plan_approval_tx: Arc::new(Mutex::new(None)),
+            tool_approval_tx: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -81,8 +87,51 @@ impl AgentState {
             }
             *ct = None;
         }
+        // Also cancel any pending plan or tool approval
+        self.resolve_plan_approval(false);
+        self.resolve_tool_approval(false);
         self.transition(AgentStatus::Stopped)?;
         self.emit(AgentEvent::EmergencyStop)?;
         Ok(())
+    }
+
+    /// Returns a clone of the AppHandle (for use in closures).
+    pub fn app_handle(&self) -> tauri::AppHandle {
+        self.app.clone()
+    }
+
+    /// Returns a clone of the tool_approval Arc for use in approval gate closures.
+    pub fn tool_approval_arc(&self) -> Arc<Mutex<Option<oneshot::Sender<bool>>>> {
+        self.tool_approval_tx.clone()
+    }
+
+    /// Register a plan-approval channel and return the receiver.
+    /// The caller awaits the receiver; the frontend calls `approve_plan`/`deny_plan`
+    /// which resolves it via `resolve_plan_approval`.
+    pub fn register_plan_approval(&self) -> oneshot::Receiver<bool> {
+        let (tx, rx) = oneshot::channel();
+        *self.plan_approval_tx.lock().unwrap() = Some(tx);
+        rx
+    }
+
+    /// Resolve the pending plan approval (true = approved, false = denied/cancelled).
+    pub fn resolve_plan_approval(&self, approved: bool) {
+        if let Some(tx) = self.plan_approval_tx.lock().unwrap().take() {
+            let _ = tx.send(approved);
+        }
+    }
+
+    /// Register a tool-approval channel and return the receiver.
+    pub fn register_tool_approval(&self) -> oneshot::Receiver<bool> {
+        let (tx, rx) = oneshot::channel();
+        *self.tool_approval_tx.lock().unwrap() = Some(tx);
+        rx
+    }
+
+    /// Resolve the pending tool approval (true = approved, false = denied).
+    pub fn resolve_tool_approval(&self, approved: bool) {
+        if let Some(tx) = self.tool_approval_tx.lock().unwrap().take() {
+            let _ = tx.send(approved);
+        }
     }
 }

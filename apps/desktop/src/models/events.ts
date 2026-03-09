@@ -1,6 +1,8 @@
 /** Agent lifecycle states */
 export type AgentStatus =
   | "Idle"
+  | "Planning"
+  | "WaitingPlanApproval"
   | "Thinking"
   | "WaitingApproval"
   | "RunningTool"
@@ -46,7 +48,7 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-/** A plan step produced by the agent */
+/** A plan step produced by the agent (for PlanUpdated — execution tracking) */
 export interface PlanStep {
   id: string;
   index: number;
@@ -54,11 +56,34 @@ export interface PlanStep {
   status: "pending" | "running" | "done" | "failed" | "skipped";
 }
 
+/** A step in an AgentPlan produced by the Planner */
+export interface AgentPlanStep {
+  id: string;
+  index: number;
+  intent: string;
+  tool: string;
+  params_preview: Record<string, unknown>;
+  depends_on: string[];
+  risk: "low" | "medium" | "high";
+  needs_credential?: string;
+}
+
+/** A structured plan produced by the Planner */
+export interface AgentPlan {
+  id: string;
+  goal: string;
+  steps: AgentPlanStep[];
+  overall_risk: "low" | "medium" | "high";
+  requires_credentials: string[];
+}
+
 /** Union of all events emitted by the backend */
 export type AgentEvent =
   | { type: "StatusChanged"; status: AgentStatus }
   | { type: "ChatMessage"; message: ChatMessage }
   | { type: "PlanUpdated"; steps: PlanStep[] }
+  | { type: "PlanningStarted" }
+  | { type: "PlanReady"; plan: AgentPlan }
   | { type: "ToolCallRequest"; request: ToolCallRequest }
   | { type: "ToolCallResult"; result: ToolCallResult }
   | { type: "AuditEntry"; entry: AuditEntry }

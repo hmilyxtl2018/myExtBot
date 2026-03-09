@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { AgentEvent, AgentStatus, ToolCallRequest } from "../models/events";
+import type { AgentEvent, AgentPlan, AgentStatus, ToolCallRequest } from "../models/events";
 
 interface UseEventStreamOptions {
   onToolCallRequest?: (req: ToolCallRequest) => void;
+  onPlanReady?: (plan: AgentPlan) => void;
 }
 
 interface UseEventStreamResult {
@@ -76,6 +77,9 @@ export function useEventStream(
   const onToolCallRequestRef = useRef(options.onToolCallRequest);
   onToolCallRequestRef.current = options.onToolCallRequest;
 
+  const onPlanReadyRef = useRef(options.onPlanReady);
+  onPlanReadyRef.current = options.onPlanReady;
+
   // Guard so the dev-mode stub is injected only once even under React StrictMode
   // which intentionally mounts → unmounts → mounts again in development.
   const stubInjectedRef = useRef(false);
@@ -97,6 +101,13 @@ export function useEventStream(
       !stubModeRef.current
     ) {
       onToolCallRequestRef.current(event.request);
+    }
+    if (
+      event.type === "PlanReady" &&
+      onPlanReadyRef.current &&
+      !stubModeRef.current
+    ) {
+      onPlanReadyRef.current(event.plan);
     }
   }, []); // intentionally no deps – stable for the lifetime of the component
 
