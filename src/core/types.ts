@@ -138,6 +138,40 @@ export interface AgentProfile {
    * When omitted or empty, this agent cannot delegate to others.
    */
   canDelegateTo?: string[];
+
+  // ── Capability metadata ────────────────────────────────────────────────────
+  // These fields describe *what* the agent knows how to do and *what it cannot*
+  // do, making each profile self-documenting and allowing operators to upgrade
+  // capabilities over time via PATCH /api/agents/:id.
+
+  /**
+   * The agent's single most important skill — its defining specialisation.
+   * Used in UI cards and agent-selection UIs to give a quick one-liner summary.
+   * Example: "Web research & information retrieval"
+   */
+  primarySkill?: string;
+
+  /**
+   * Supporting skills the agent can apply, listed in priority order.
+   * These complement the primary skill but are not the agent's main focus.
+   * Example: ["Summarisation", "Citation formatting", "Language translation"]
+   */
+  secondarySkills?: string[];
+
+  /**
+   * High-level capabilities the agent exposes, expressed as action phrases.
+   * These are shown in discovery UIs so users know what they can ask the agent.
+   * Example: ["Search the web", "Summarise documents", "Translate text"]
+   */
+  capabilities?: string[];
+
+  /**
+   * Hard limits or behavioural guardrails for this agent.
+   * Operators use this to document what the agent must NOT do, what data it
+   * cannot access, or any rate/quota restrictions.
+   * Example: ["Cannot access internal databases", "Max 10 tool calls per request"]
+   */
+  constraints?: string[];
 }
 
 /**
@@ -150,6 +184,10 @@ export interface AgentSummary {
   sceneId?: string;
   allowedServices?: string[];
   canDelegateTo?: string[];
+  primarySkill?: string;
+  secondarySkills?: string[];
+  capabilities?: string[];
+  constraints?: string[];
   toolCount: number;
 }
 

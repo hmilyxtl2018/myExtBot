@@ -286,6 +286,10 @@ export class McpServiceListManager {
         sceneId: agent.sceneId,
         allowedServices: agent.allowedServices,
         canDelegateTo: agent.canDelegateTo,
+        primarySkill: agent.primarySkill,
+        secondarySkills: agent.secondarySkills,
+        capabilities: agent.capabilities,
+        constraints: agent.constraints,
         toolCount: this.getToolDefinitions(filter).length,
       };
     });

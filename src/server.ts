@@ -14,7 +14,9 @@
  *   DELETE /api/scenes/:id                — remove a scene
  *
  *   GET  /api/agents                      — list all agent profiles
- *   POST /api/agents                      — create an agent  { id, name, description?, sceneId?, allowedServices?, canDelegateTo? }
+ *   GET  /api/agents/:id                  — get a single agent profile
+ *   POST /api/agents                      — create an agent  { id, name, description?, sceneId?, allowedServices?, canDelegateTo?, primarySkill?, secondarySkills?, capabilities?, constraints? }
+ *   PATCH /api/agents/:id                 — update an agent  (any subset of writable fields)
  *   DELETE /api/agents/:id                — remove an agent
  *   POST /api/dispatch-as/:agentId        — dispatch a tool call as a specific agent
  *   POST /api/agents/:fromAgentId/delegate — delegate a tool call to another agent  { toAgentId, toolName, arguments }
@@ -77,12 +79,37 @@ manager.registerAgent({
   description: "Specialized in web search and information retrieval.",
   sceneId: "research",
   canDelegateTo: ["scheduling-assistant"],
+  primarySkill: "Web research & information retrieval",
+  secondarySkills: ["Summarisation", "Source citation", "Fact verification"],
+  capabilities: [
+    "Search the web for any topic",
+    "Summarise long-form documents",
+    "Retrieve and cite sources",
+    "Delegate follow-up scheduling to Scheduling Assistant",
+  ],
+  constraints: [
+    "Cannot access internal or private databases",
+    "Does not store search history",
+    "Results may be outdated — always cite the retrieval date",
+  ],
 });
 manager.registerAgent({
   id: "scheduling-assistant",
   name: "Scheduling Assistant",
   description: "Manages calendar events and scheduling.",
   sceneId: "productivity",
+  primarySkill: "Calendar event management",
+  secondarySkills: ["Availability checking", "Meeting coordination", "Reminder setting"],
+  capabilities: [
+    "Create, read, and update calendar events",
+    "Check free/busy slots across a date range",
+    "Set event reminders and recurrence rules",
+  ],
+  constraints: [
+    "Cannot send external emails or notifications",
+    "Cannot access calendars of other users",
+    "No delegation permissions — terminal agent",
+  ],
 });
 manager.registerAgent({
   id: "dev-bot",
@@ -90,6 +117,19 @@ manager.registerAgent({
   description: "Runs code snippets and searches for documentation.",
   allowedServices: ["CodeRunnerService", "SearchService"],
   canDelegateTo: ["research-bot"],
+  primarySkill: "Code execution & developer tooling",
+  secondarySkills: ["Documentation lookup", "Debugging assistance", "Script automation"],
+  capabilities: [
+    "Execute code in multiple languages (Python, JS, etc.)",
+    "Search developer documentation and Stack Overflow",
+    "Generate and validate code snippets",
+    "Delegate deep research tasks to Research Bot",
+  ],
+  constraints: [
+    "No network access during code execution (sandboxed)",
+    "Cannot read or write to the host filesystem",
+    "Execution timeout: 30 seconds per run",
+  ],
 });
 manager.registerAgent({
   id: "full-agent",
@@ -97,6 +137,18 @@ manager.registerAgent({
   description: "Unrestricted access to all registered services. Can delegate to any agent.",
   sceneId: "full",
   canDelegateTo: ["*"],
+  primarySkill: "Multi-domain orchestration",
+  secondarySkills: ["Task decomposition", "Cross-agent coordination", "Workflow automation"],
+  capabilities: [
+    "Access all registered services simultaneously",
+    "Orchestrate multi-step workflows across agents",
+    "Delegate any task to any registered agent",
+    "Combine search, calendar, and code in a single pipeline",
+  ],
+  constraints: [
+    "For power users only — no service restrictions",
+    "Audit log is mandatory for all operations",
+  ],
 });
 
 const app = express();
@@ -190,18 +242,43 @@ app.get("/api/agents", (_req: Request, res: Response) => {
   res.json(manager.listAgents());
 });
 
+app.get("/api/agents/:id", (req: Request, res: Response) => {
+  const agent = manager.listAgents().find((a) => a.id === String(req.params.id));
+  if (!agent) {
+    res.status(404).json({ ok: false, error: `Agent "${req.params.id}" is not registered.` });
+    return;
+  }
+  res.json(agent);
+});
+
 app.post("/api/agents", (req: Request, res: Response) => {
-  const { id, name, description, sceneId, allowedServices, canDelegateTo } =
-    req.body as Partial<AgentProfile>;
+  const {
+    id, name, description, sceneId, allowedServices, canDelegateTo,
+    primarySkill, secondarySkills, capabilities, constraints,
+  } = req.body as Partial<AgentProfile>;
   if (!id || !name) {
     res.status(400).json({ ok: false, error: "id and name are required" });
     return;
   }
   try {
-    manager.registerAgent({ id, name, description, sceneId, allowedServices, canDelegateTo });
+    manager.registerAgent({
+      id, name, description, sceneId, allowedServices, canDelegateTo,
+      primarySkill, secondarySkills, capabilities, constraints,
+    });
     res.json({ ok: true, agent: manager.listAgents().find((a) => a.id === id) });
   } catch (e) {
     res.status(400).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+app.patch("/api/agents/:id", (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const patch = req.body as Partial<Omit<AgentProfile, "id">>;
+  try {
+    manager.updateAgent(id, patch);
+    res.json({ ok: true, agent: manager.listAgents().find((a) => a.id === id) });
+  } catch (e) {
+    res.status(404).json({ ok: false, error: (e as Error).message });
   }
 });
 
@@ -775,6 +852,14 @@ const HTML = /* html */ `<!DOCTYPE html>
         <div><label>Description</label><input id="new-agent-desc" type="text" placeholder="Optional description" /></div>
         <div><label>Can delegate to (agent IDs, comma-separated; * = any)</label><input id="new-agent-delegate" type="text" placeholder="scheduling-assistant, *" /></div>
       </div>
+      <div class="form-grid-2">
+        <div><label>Primary Skill</label><input id="new-agent-primary-skill" type="text" placeholder="Web research &amp; retrieval" /></div>
+        <div><label>Secondary Skills (comma-separated)</label><input id="new-agent-secondary-skills" type="text" placeholder="Summarisation, Citation" /></div>
+      </div>
+      <div class="form-grid-2">
+        <div><label>Capabilities (one per line)</label><textarea id="new-agent-capabilities" rows="3" placeholder="Search the web&#10;Summarise documents" style="width:100%;resize:vertical;font-size:0.82rem;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)"></textarea></div>
+        <div><label>Constraints (one per line)</label><textarea id="new-agent-constraints" rows="3" placeholder="No filesystem access&#10;30 s execution timeout" style="width:100%;resize:vertical;font-size:0.82rem;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)"></textarea></div>
+      </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary btn-sm" onclick="createAgent()">Create Agent</button>
         <button class="btn btn-ghost btn-sm"  onclick="toggleCreateForm('agent')">Cancel</button>
@@ -924,6 +1009,17 @@ const HTML = /* html */ `<!DOCTYPE html>
     CodeRunnerService:  '⚡',
   };
   function icon(name) { return ICONS[name] || '🧩'; }
+
+  /** Escapes a string for safe HTML interpolation. */
+  function esc(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
   // ── Tab navigation ────────────────────────────────────────────────────────
   function switchTab(id, btn) {
@@ -1133,28 +1229,122 @@ const HTML = /* html */ `<!DOCTYPE html>
     const scopeLabel = ag.allowedServices
       ? '<span class="svc-chip">explicit services</span>'
       : ag.sceneId
-        ? '<span class="svc-chip">scene: ' + ag.sceneId + '</span>'
+        ? '<span class="svc-chip">scene: ' + esc(ag.sceneId) + '</span>'
         : '<span class="svc-chip">all services</span>';
     const svcChips = (ag.allowedServices || []).map(n =>
-      '<span class="svc-chip">' + icon(n) + ' ' + n + '</span>'
+      '<span class="svc-chip">' + icon(n) + ' ' + esc(n) + '</span>'
     ).join('');
     const delegateChips = ag.canDelegateTo && ag.canDelegateTo.length
       ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">'
           + '<span style="font-size:0.7rem;color:var(--text-dim)">📨 delegates to:</span>'
-          + ag.canDelegateTo.map(d => '<span class="svc-chip" style="background:var(--accent);color:#fff;opacity:0.85">' + d + '</span>').join('')
+          + ag.canDelegateTo.map(d => '<span class="svc-chip" style="background:var(--accent);color:#fff;opacity:0.85">' + esc(d) + '</span>').join('')
           + '</div>'
       : '';
-    return \`<div class="group-card">
-      <div class="group-card-title">🤖 \${ag.name} <span style="font-size:0.7rem;color:var(--text-dim);font-weight:400">#\${ag.id}</span></div>
-      \${ag.description ? '<div class="group-card-desc">' + ag.description + '</div>' : ''}
-      <div class="group-card-services">\${scopeLabel}\${svcChips}</div>
-      \${delegateChips}
-      <div class="group-card-footer">
-        <span class="group-card-meta">\${ag.toolCount} \${toolWord}</span>
-        <button class="btn btn-ghost btn-sm ml-auto" onclick="switchToDispatchAs('\${ag.id}')">▶ Try</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteAgent('\${ag.id}')">🗑</button>
+
+    // ── Capability metadata rows ──────────────────────────────────────────
+    const primarySkillRow = ag.primarySkill
+      ? '<div style="margin-top:8px;display:flex;align-items:flex-start;gap:6px">'
+          + '<span style="font-size:0.7rem;color:var(--text-dim);white-space:nowrap;margin-top:2px">⭐ Primary:</span>'
+          + '<span style="font-size:0.78rem;font-weight:600;color:var(--text)">' + esc(ag.primarySkill) + '</span>'
+          + '</div>'
+      : '';
+    const secondarySkillsRow = ag.secondarySkills && ag.secondarySkills.length
+      ? '<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">'
+          + '<span style="font-size:0.7rem;color:var(--text-dim)">🔸 Secondary:</span>'
+          + ag.secondarySkills.map(s => '<span class="svc-chip" style="background:rgba(234,179,8,0.15);color:var(--text)">' + esc(s) + '</span>').join('')
+          + '</div>'
+      : '';
+    const capabilitiesSection = ag.capabilities && ag.capabilities.length
+      ? '<details style="margin-top:6px"><summary style="font-size:0.75rem;color:var(--text-dim);cursor:pointer;user-select:none">✅ Capabilities (' + ag.capabilities.length + ')</summary>'
+          + '<ul style="margin:4px 0 0 16px;padding:0;font-size:0.78rem;color:var(--text)">'
+          + ag.capabilities.map(c => '<li>' + esc(c) + '</li>').join('')
+          + '</ul></details>'
+      : '';
+    const constraintsSection = ag.constraints && ag.constraints.length
+      ? '<details style="margin-top:4px"><summary style="font-size:0.75rem;color:var(--text-dim);cursor:pointer;user-select:none">🚫 Constraints (' + ag.constraints.length + ')</summary>'
+          + '<ul style="margin:4px 0 0 16px;padding:0;font-size:0.78rem;color:var(--warning,#f59e0b)">'
+          + ag.constraints.map(c => '<li>' + esc(c) + '</li>').join('')
+          + '</ul></details>'
+      : '';
+
+    // ── Inline edit form (hidden by default) ─────────────────────────────
+    const editFormId = 'edit-agent-form-' + ag.id;
+    const editForm = \`<div id="\${editFormId}" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+      <div style="font-weight:600;font-size:0.82rem;margin-bottom:8px">✏️ Edit Agent Profile</div>
+      <div class="form-grid-2" style="margin-bottom:8px">
+        <div><label>Display Name</label><input data-field="name" value="\${esc(ag.name)}" type="text" /></div>
+        <div><label>Description</label><input data-field="description" value="\${esc(ag.description || '')}" type="text" /></div>
+      </div>
+      <div class="form-grid-2" style="margin-bottom:8px">
+        <div><label>Primary Skill</label><input data-field="primarySkill" value="\${esc(ag.primarySkill || '')}" type="text" placeholder="e.g. Web research &amp; retrieval" /></div>
+        <div><label>Secondary Skills (comma-separated)</label><input data-field="secondarySkills" value="\${esc((ag.secondarySkills || []).join(', '))}" type="text" /></div>
+      </div>
+      <div class="form-grid-2" style="margin-bottom:8px">
+        <div><label>Capabilities (one per line)</label>
+          <textarea data-field="capabilities" rows="4" style="width:100%;resize:vertical;font-size:0.78rem;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)">\${esc((ag.capabilities || []).join('\\n'))}</textarea>
+        </div>
+        <div><label>Constraints (one per line)</label>
+          <textarea data-field="constraints" rows="4" style="width:100%;resize:vertical;font-size:0.78rem;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)">\${esc((ag.constraints || []).join('\\n'))}</textarea>
+        </div>
+      </div>
+      <div class="form-grid-2" style="margin-bottom:8px">
+        <div><label>Scene ID</label><input data-field="sceneId" value="\${esc(ag.sceneId || '')}" type="text" /></div>
+        <div><label>Allowed Services (comma-separated)</label><input data-field="allowedServices" value="\${esc((ag.allowedServices || []).join(', '))}" type="text" /></div>
+      </div>
+      <div class="form-grid-1" style="margin-bottom:8px">
+        <div><label>Can delegate to (comma-separated; * = any)</label><input data-field="canDelegateTo" value="\${esc((ag.canDelegateTo || []).join(', '))}" type="text" /></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveAgent('\${esc(ag.id)}')">💾 Save</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleEditForm('\${esc(ag.id)}')">Cancel</button>
       </div>
     </div>\`;
+
+    return \`<div class="group-card" id="agent-card-\${esc(ag.id)}">
+      <div class="group-card-title">🤖 \${esc(ag.name)} <span style="font-size:0.7rem;color:var(--text-dim);font-weight:400">#\${esc(ag.id)}</span></div>
+      \${ag.description ? '<div class="group-card-desc">' + esc(ag.description) + '</div>' : ''}
+      <div class="group-card-services">\${scopeLabel}\${svcChips}</div>
+      \${delegateChips}
+      \${primarySkillRow}
+      \${secondarySkillsRow}
+      \${capabilitiesSection}
+      \${constraintsSection}
+      \${editForm}
+      <div class="group-card-footer">
+        <span class="group-card-meta">\${ag.toolCount} \${toolWord}</span>
+        <button class="btn btn-ghost btn-sm ml-auto" onclick="switchToDispatchAs('\${esc(ag.id)}')">▶ Try</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleEditForm('\${esc(ag.id)}')">✏️ Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAgent('\${esc(ag.id)}')">🗑</button>
+      </div>
+    </div>\`;
+  }
+
+  function toggleEditForm(agentId) {
+    const form = document.getElementById('edit-agent-form-' + agentId);
+    if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function saveAgent(agentId) {
+    const card = document.getElementById('agent-card-' + agentId);
+    const patch = {};
+    card.querySelectorAll('[data-field]').forEach(el => {
+      const field = el.getAttribute('data-field');
+      const val = el.value.trim();
+      if (['secondarySkills', 'allowedServices', 'canDelegateTo'].includes(field)) {
+        patch[field] = val ? val.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+      } else if (['capabilities', 'constraints'].includes(field)) {
+        patch[field] = val ? val.split('\\n').map(s => s.trim()).filter(Boolean) : undefined;
+      } else {
+        patch[field] = val || undefined;
+      }
+    });
+    const res = await fetch('/api/agents/' + agentId, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const data = await res.json();
+    if (data.ok) { toast('Agent "' + agentId + '" updated ✓'); await loadAll(); }
+    else toast('Error: ' + data.error, false);
   }
 
   async function deleteAgent(id) {
@@ -1172,6 +1362,10 @@ const HTML = /* html */ `<!DOCTYPE html>
     const svcs     = document.getElementById('new-agent-svcs').value.split(',').map(s => s.trim()).filter(Boolean);
     const desc     = document.getElementById('new-agent-desc').value.trim();
     const delegate = document.getElementById('new-agent-delegate').value.split(',').map(s => s.trim()).filter(Boolean);
+    const primarySkill    = document.getElementById('new-agent-primary-skill').value.trim();
+    const secondarySkills = document.getElementById('new-agent-secondary-skills').value.split(',').map(s => s.trim()).filter(Boolean);
+    const capabilities    = document.getElementById('new-agent-capabilities').value.split('\\n').map(s => s.trim()).filter(Boolean);
+    const constraints     = document.getElementById('new-agent-constraints').value.split('\\n').map(s => s.trim()).filter(Boolean);
     if (!id || !name) { toast('ID and Name are required', false); return; }
     const body = {
       id, name,
@@ -1179,6 +1373,10 @@ const HTML = /* html */ `<!DOCTYPE html>
       sceneId: scene || undefined,
       allowedServices: svcs.length ? svcs : undefined,
       canDelegateTo: delegate.length ? delegate : undefined,
+      primarySkill: primarySkill || undefined,
+      secondarySkills: secondarySkills.length ? secondarySkills : undefined,
+      capabilities: capabilities.length ? capabilities : undefined,
+      constraints: constraints.length ? constraints : undefined,
     };
     const res = await fetch('/api/agents', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1276,16 +1474,17 @@ const HTML = /* html */ `<!DOCTYPE html>
           const ts = new Date(entry.timestamp).toLocaleTimeString();
           const statusColor = entry.success ? 'var(--success,#22c55e)' : 'var(--danger,#ef4444)';
           const statusIcon  = entry.success ? '✓' : '✗';
-          const outputStr   = entry.success
+          const rawOutput   = entry.success
             ? (typeof entry.output === 'object' ? JSON.stringify(entry.output).slice(0, 120) : String(entry.output ?? '').slice(0, 120))
             : entry.error;
+          const outputStr = esc(rawOutput || '');
           return \`<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid \${statusColor};border-radius:6px;padding:8px 12px;font-size:0.78rem">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <span style="color:var(--text-dim)">\${ts}</span>
-              <span style="font-weight:600">🤖 \${entry.fromAgentId}</span>
+              <span style="color:var(--text-dim)">\${esc(ts)}</span>
+              <span style="font-weight:600">🤖 \${esc(entry.fromAgentId)}</span>
               <span style="color:var(--accent)">→</span>
-              <span style="font-weight:600">🤖 \${entry.toAgentId}</span>
-              <span style="font-family:monospace;background:var(--bg);padding:1px 6px;border-radius:4px">\${entry.toolName}</span>
+              <span style="font-weight:600">🤖 \${esc(entry.toAgentId)}</span>
+              <span style="font-family:monospace;background:var(--bg);padding:1px 6px;border-radius:4px">\${esc(entry.toolName)}</span>
               <span style="margin-left:auto;color:\${statusColor};font-weight:600">\${statusIcon}</span>
             </div>
             <div style="color:var(--text-dim);font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${outputStr || '—'}</div>
