@@ -101,20 +101,20 @@ const HTML = /* html */ `<!DOCTYPE html>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --card: #1e2130;
-      --border: #2a2d3e;
-      --accent: #6c63ff;
-      --accent-hover: #8a82ff;
-      --green: #2ecc71;
-      --red: #e74c3c;
-      --orange: #f39c12;
-      --text: #e0e0e0;
-      --text-dim: #8a8fa8;
-      --tag-bg: #252840;
+      --bg: #f5f7fa;
+      --surface: #ffffff;
+      --card: #ffffff;
+      --border: #e2e6ef;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --green: #16a34a;
+      --red: #dc2626;
+      --orange: #d97706;
+      --text: #111827;
+      --text-dim: #6b7280;
+      --tag-bg: #f1f5f9;
       --radius: 10px;
-      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --shadow: 0 4px 24px rgba(0,0,0,0.08);
     }
 
     body {
@@ -211,8 +211,8 @@ const HTML = /* html */ `<!DOCTYPE html>
       text-transform: uppercase;
       flex-shrink: 0;
     }
-    .badge.enabled  { background: rgba(46,204,113,0.15); color: var(--green); }
-    .badge.disabled { background: rgba(231,76,60,0.15);  color: var(--red); }
+    .badge.enabled  { background: rgba(22,163,74,0.12);  color: var(--green); }
+    .badge.disabled { background: rgba(220,38,38,0.12);  color: var(--red); }
     .badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
     .card-footer {
@@ -232,10 +232,10 @@ const HTML = /* html */ `<!DOCTYPE html>
 
     .btn-primary  { background: var(--accent); color: #fff; }
     .btn-primary:hover { background: var(--accent-hover); }
-    .btn-success  { background: rgba(46,204,113,0.15); color: var(--green); border: 1px solid rgba(46,204,113,0.3); }
-    .btn-success:hover { background: rgba(46,204,113,0.25); }
-    .btn-danger   { background: rgba(231,76,60,0.15); color: var(--red); border: 1px solid rgba(231,76,60,0.3); }
-    .btn-danger:hover { background: rgba(231,76,60,0.25); }
+    .btn-success  { background: rgba(22,163,74,0.10); color: var(--green); border: 1px solid rgba(22,163,74,0.3); }
+    .btn-success:hover { background: rgba(22,163,74,0.2); }
+    .btn-danger   { background: rgba(220,38,38,0.10); color: var(--red); border: 1px solid rgba(220,38,38,0.3); }
+    .btn-danger:hover { background: rgba(220,38,38,0.2); }
     .btn-ghost    { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
     .btn-ghost:hover { background: var(--surface); color: var(--text); }
     .btn-sm { padding: 5px 10px; font-size: 0.73rem; }
@@ -262,7 +262,7 @@ const HTML = /* html */ `<!DOCTYPE html>
       font-family: 'Courier New', monospace;
       font-weight: 700;
       font-size: 0.82rem;
-      color: var(--accent-hover);
+      color: var(--accent);
       margin-bottom: 4px;
     }
     .tool-desc { color: var(--text-dim); margin-bottom: 8px; line-height: 1.4; }
@@ -273,9 +273,9 @@ const HTML = /* html */ `<!DOCTYPE html>
       padding: 2px 8px;
       font-family: 'Courier New', monospace;
       font-size: 0.72rem;
-      color: #a8d8ea;
+      color: #0369a1;
     }
-    .param-tag.required { color: #f9ca7f; }
+    .param-tag.required { color: #b45309; }
 
     /* ── Dispatch section ── */
     .dispatch-section {
@@ -320,8 +320,8 @@ const HTML = /* html */ `<!DOCTYPE html>
       line-height: 1.5;
     }
     .dispatch-result.show { display: block; }
-    .dispatch-result.success { border-color: rgba(46,204,113,0.4); color: #a8f0c6; }
-    .dispatch-result.error   { border-color: rgba(231,76,60,0.4);  color: #f0a8a8; }
+    .dispatch-result.success { border-color: rgba(22,163,74,0.4);  color: #15803d; }
+    .dispatch-result.error   { border-color: rgba(220,38,38,0.4);  color: #b91c1c; }
 
     /* ── Stats bar ── */
     .stats-bar {
@@ -361,7 +361,7 @@ const HTML = /* html */ `<!DOCTYPE html>
 
     .spinner {
       display: inline-block; width: 14px; height: 14px;
-      border: 2px solid rgba(255,255,255,0.3);
+      border: 2px solid rgba(0,0,0,0.15);
       border-top-color: currentColor;
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
