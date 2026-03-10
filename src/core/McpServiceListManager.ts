@@ -1,6 +1,7 @@
 import {
   AgentProfile,
   AgentSummary,
+  DelegationLogEntry,
   McpService,
   Scene,
   SceneSummary,
@@ -20,11 +21,17 @@ import {
  * - Dynamic enable/disable of services at runtime
  * - Scene management: group services by use-case
  * - Agent management: restrict tool access per named LLM persona
+ * - Inter-agent communication: delegate tool calls from one agent to another
+ *   with permission checking and a queryable delegation log
  */
 export class McpServiceListManager {
   private services: Map<string, McpService> = new Map();
   private scenes: Map<string, Scene> = new Map();
   private agents: Map<string, AgentProfile> = new Map();
+
+  /** Circular buffer of the last {@link DELEGATION_LOG_MAX} delegation records. */
+  private delegationLog: DelegationLogEntry[] = [];
+  private static readonly DELEGATION_LOG_MAX = 50;
 
   // ── Service management ────────────────────────────────────────────────────
 
@@ -278,8 +285,101 @@ export class McpServiceListManager {
         description: agent.description,
         sceneId: agent.sceneId,
         allowedServices: agent.allowedServices,
+        canDelegateTo: agent.canDelegateTo,
         toolCount: this.getToolDefinitions(filter).length,
       };
     });
+  }
+
+  // ── Inter-agent communication ─────────────────────────────────────────────
+
+  /**
+   * Delegates a tool call from one agent to another.
+   *
+   * This is the foundation of multi-agent communication in myExtBot.  When
+   * Agent A needs a capability it does not own (e.g. a research bot asking a
+   * calendar assistant to schedule a follow-up), it delegates the tool call to
+   * the appropriate agent.
+   *
+   * Permission model:
+   * - The sending agent (`fromAgentId`) must list `toAgentId` in its
+   *   `canDelegateTo` array, **or** have `canDelegateTo: ["*"]`.
+   * - The receiving agent (`toAgentId`) must be able to handle the tool call
+   *   (i.e. `dispatchAs(toAgentId, toolCall)` would succeed).
+   *
+   * Every delegation attempt (success or failure) is recorded in the
+   * in-memory delegation log accessible via `getDelegationLog()`.
+   *
+   * @param fromAgentId - The agent initiating the delegation.
+   * @param toAgentId   - The agent being asked to execute the tool.
+   * @param toolCall    - The tool call to execute.
+   * @returns A promise resolving to the ToolResult from the target agent.
+   * @throws Error if either agent is not registered, the sender lacks
+   *         delegation permission, or the target cannot handle the tool.
+   */
+  async delegateAs(
+    fromAgentId: string,
+    toAgentId: string,
+    toolCall: ToolCall
+  ): Promise<ToolResult> {
+    const fromAgent = this.agents.get(fromAgentId);
+    if (!fromAgent) {
+      throw new Error(`Agent "${fromAgentId}" is not registered.`);
+    }
+    if (!this.agents.has(toAgentId)) {
+      throw new Error(`Target agent "${toAgentId}" is not registered.`);
+    }
+
+    // Permission check: fromAgent must explicitly allow delegation to toAgent.
+    const allowed = fromAgent.canDelegateTo ?? [];
+    const hasPermission = allowed.includes("*") || allowed.includes(toAgentId);
+    if (!hasPermission) {
+      throw new Error(
+        `Agent "${fromAgentId}" is not permitted to delegate to agent "${toAgentId}". ` +
+          `Add "${toAgentId}" (or "*") to its canDelegateTo list.`
+      );
+    }
+
+    // Execute the tool call as the target agent.
+    let result: ToolResult;
+    try {
+      result = await this.dispatchAs(toAgentId, toolCall);
+    } catch (err) {
+      result = { success: false, error: (err as Error).message };
+    }
+
+    // Record in the delegation log.
+    this.appendDelegationLog({
+      timestamp: new Date().toISOString(),
+      fromAgentId,
+      toAgentId,
+      toolName: toolCall.toolName,
+      arguments: toolCall.arguments,
+      success: result.success,
+      output: result.output,
+      error: result.error,
+    });
+
+    // Re-throw on failure so the caller gets a proper error response.
+    if (!result.success) {
+      throw new Error(result.error ?? "Delegation failed.");
+    }
+    return result;
+  }
+
+  /**
+   * Returns the delegation log entries in reverse-chronological order
+   * (most recent first), up to the last {@link DELEGATION_LOG_MAX} entries.
+   */
+  getDelegationLog(): DelegationLogEntry[] {
+    return [...this.delegationLog].reverse();
+  }
+
+  /** Appends a log entry, evicting the oldest one when the buffer is full. */
+  private appendDelegationLog(entry: DelegationLogEntry): void {
+    this.delegationLog.push(entry);
+    if (this.delegationLog.length > McpServiceListManager.DELEGATION_LOG_MAX) {
+      this.delegationLog.shift();
+    }
   }
 }

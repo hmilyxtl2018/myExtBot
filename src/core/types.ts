@@ -108,6 +108,10 @@ export interface Scene {
  *
  * An agent may optionally be scoped to a scene; if so, it further restricts the
  * scene's tool set to the services listed in `allowedServices`.
+ *
+ * Agents can also delegate tasks to other agents via the `canDelegateTo` field,
+ * enabling multi-agent pipelines where a coordinator hands off sub-tasks to
+ * specialised agents.
  */
 export interface AgentProfile {
   /** Unique identifier for this agent (e.g. "research-bot"). */
@@ -128,6 +132,12 @@ export interface AgentProfile {
    * precedence (use it to further restrict a scene's service set).
    */
   allowedServices?: string[];
+  /**
+   * IDs of other agents this agent is permitted to delegate tasks to.
+   * Use `["*"]` to allow delegation to any registered agent.
+   * When omitted or empty, this agent cannot delegate to others.
+   */
+  canDelegateTo?: string[];
 }
 
 /**
@@ -139,7 +149,32 @@ export interface AgentSummary {
   description?: string;
   sceneId?: string;
   allowedServices?: string[];
+  canDelegateTo?: string[];
   toolCount: number;
+}
+
+/**
+ * A single entry in the inter-agent delegation log.
+ * The log records every `delegateAs()` call so operators can trace
+ * how agents communicate with each other at runtime.
+ */
+export interface DelegationLogEntry {
+  /** ISO 8601 timestamp of when the delegation was issued. */
+  timestamp: string;
+  /** The agent that initiated the delegation. */
+  fromAgentId: string;
+  /** The agent that was asked to execute the tool call. */
+  toAgentId: string;
+  /** The name of the tool that was delegated. */
+  toolName: string;
+  /** The arguments passed to the tool. */
+  arguments: Record<string, unknown>;
+  /** Whether the delegated tool call succeeded. */
+  success: boolean;
+  /** Output from the tool on success. */
+  output?: unknown;
+  /** Error message from the tool on failure. */
+  error?: string;
 }
 
 /**

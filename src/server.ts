@@ -14,9 +14,11 @@
  *   DELETE /api/scenes/:id                — remove a scene
  *
  *   GET  /api/agents                      — list all agent profiles
- *   POST /api/agents                      — create an agent  { id, name, description?, sceneId?, allowedServices? }
+ *   POST /api/agents                      — create an agent  { id, name, description?, sceneId?, allowedServices?, canDelegateTo? }
  *   DELETE /api/agents/:id                — remove an agent
  *   POST /api/dispatch-as/:agentId        — dispatch a tool call as a specific agent
+ *   POST /api/agents/:fromAgentId/delegate — delegate a tool call to another agent  { toAgentId, toolName, arguments }
+ *   GET  /api/delegation-log              — retrieve the inter-agent delegation history
  *
  *   GET  /api/plugins                     — list all plugins in the registry (with install status)
  *   GET  /api/plugins/installed           — list installed plugins only
@@ -74,6 +76,7 @@ manager.registerAgent({
   name: "Research Bot",
   description: "Specialized in web search and information retrieval.",
   sceneId: "research",
+  canDelegateTo: ["scheduling-assistant"],
 });
 manager.registerAgent({
   id: "scheduling-assistant",
@@ -86,12 +89,14 @@ manager.registerAgent({
   name: "Dev Bot",
   description: "Runs code snippets and searches for documentation.",
   allowedServices: ["CodeRunnerService", "SearchService"],
+  canDelegateTo: ["research-bot"],
 });
 manager.registerAgent({
   id: "full-agent",
   name: "Full Agent",
-  description: "Unrestricted access to all registered services.",
+  description: "Unrestricted access to all registered services. Can delegate to any agent.",
   sceneId: "full",
+  canDelegateTo: ["*"],
 });
 
 const app = express();
@@ -186,14 +191,14 @@ app.get("/api/agents", (_req: Request, res: Response) => {
 });
 
 app.post("/api/agents", (req: Request, res: Response) => {
-  const { id, name, description, sceneId, allowedServices } =
+  const { id, name, description, sceneId, allowedServices, canDelegateTo } =
     req.body as Partial<AgentProfile>;
   if (!id || !name) {
     res.status(400).json({ ok: false, error: "id and name are required" });
     return;
   }
   try {
-    manager.registerAgent({ id, name, description, sceneId, allowedServices });
+    manager.registerAgent({ id, name, description, sceneId, allowedServices, canDelegateTo });
     res.json({ ok: true, agent: manager.listAgents().find((a) => a.id === id) });
   } catch (e) {
     res.status(400).json({ ok: false, error: (e as Error).message });
@@ -222,6 +227,30 @@ app.post("/api/dispatch-as/:agentId", async (req: Request, res: Response) => {
   } catch (e) {
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
+});
+
+app.post("/api/agents/:fromAgentId/delegate", async (req: Request, res: Response) => {
+  const fromAgentId = String(req.params.fromAgentId);
+  const { toAgentId, toolName, arguments: args } = req.body as {
+    toAgentId?: string;
+    toolName?: string;
+    arguments?: Record<string, unknown>;
+  };
+  if (!toAgentId || !toolName) {
+    res.status(400).json({ ok: false, error: "toAgentId and toolName are required" });
+    return;
+  }
+  try {
+    const call: ToolCall = { toolName, arguments: args ?? {} };
+    const result = await manager.delegateAs(fromAgentId, toAgentId, call);
+    res.json({ ok: true, fromAgentId, toAgentId, result });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+app.get("/api/delegation-log", (_req: Request, res: Response) => {
+  res.json(manager.getDelegationLog());
 });
 
 // ── Plugins API ───────────────────────────────────────────────────────────────
@@ -742,8 +771,9 @@ const HTML = /* html */ `<!DOCTYPE html>
         <div><label>Scene ID (optional)</label><input id="new-agent-scene" type="text" placeholder="research" /></div>
         <div><label>Allowed services (comma-separated, overrides scene)</label><input id="new-agent-svcs" type="text" placeholder="SearchService" /></div>
       </div>
-      <div class="form-grid-1">
+      <div class="form-grid-2">
         <div><label>Description</label><input id="new-agent-desc" type="text" placeholder="Optional description" /></div>
+        <div><label>Can delegate to (agent IDs, comma-separated; * = any)</label><input id="new-agent-delegate" type="text" placeholder="scheduling-assistant, *" /></div>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary btn-sm" onclick="createAgent()">Create Agent</button>
@@ -753,6 +783,54 @@ const HTML = /* html */ `<!DOCTYPE html>
 
     <div class="group-grid" id="agents-grid">
       <div style="color:var(--text-dim)">Loading agents…</div>
+    </div>
+
+    <!-- Communication Log -->
+    <div style="margin-top:28px">
+      <div class="flex-gap mb-8">
+        <div class="section-title" style="margin:0;font-size:0.95rem">📨 Inter-Agent Communication Log</div>
+        <button class="btn btn-ghost btn-sm" onclick="refreshDelegationLog()" style="margin-left:auto">↻ Refresh</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleDelegateForm()" id="delegate-toggle-btn">＋ Try Delegate</button>
+      </div>
+
+      <!-- Try-delegate form (collapsible) -->
+      <div class="create-form" id="delegate-try-form">
+        <div style="font-weight:600;margin-bottom:10px;font-size:0.85rem">Send a delegation request between agents</div>
+        <div class="form-grid-2" style="margin-bottom:10px">
+          <div>
+            <label>From Agent</label>
+            <select id="delegate-from" onchange="populateDelegateTargets()">
+              <option value="">— choose —</option>
+            </select>
+          </div>
+          <div>
+            <label>To Agent</label>
+            <select id="delegate-to" onchange="populateDelegateTools()">
+              <option value="">— choose —</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid-2" style="margin-bottom:10px">
+          <div>
+            <label>Tool Name</label>
+            <select id="delegate-tool">
+              <option value="">— choose to-agent first —</option>
+            </select>
+          </div>
+          <div>
+            <label>Arguments (JSON)</label>
+            <input id="delegate-args" type="text" placeholder='{"query":"test"}' />
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="submitDelegate()" aria-label="Send delegation request">📨 Send Delegation</button>
+          <button class="btn btn-ghost btn-sm"   onclick="toggleDelegateForm()">Cancel</button>
+        </div>
+      </div>
+
+      <div id="delegation-log-container">
+        <div style="color:var(--text-dim);font-size:0.8rem">No delegations recorded yet.</div>
+      </div>
     </div>
   </div>
 
@@ -889,6 +967,7 @@ const HTML = /* html */ `<!DOCTYPE html>
       populateCategoryFilter(plugins);
       populateToolSelect(tools);
       populateAgentSelect(agents);
+      refreshDelegationLog();
     } catch (e) {
       toast('Failed to load data: ' + e.message, false);
     }
@@ -1059,10 +1138,17 @@ const HTML = /* html */ `<!DOCTYPE html>
     const svcChips = (ag.allowedServices || []).map(n =>
       '<span class="svc-chip">' + icon(n) + ' ' + n + '</span>'
     ).join('');
+    const delegateChips = ag.canDelegateTo && ag.canDelegateTo.length
+      ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">'
+          + '<span style="font-size:0.7rem;color:var(--text-dim)">📨 delegates to:</span>'
+          + ag.canDelegateTo.map(d => '<span class="svc-chip" style="background:var(--accent);color:#fff;opacity:0.85">' + d + '</span>').join('')
+          + '</div>'
+      : '';
     return \`<div class="group-card">
       <div class="group-card-title">🤖 \${ag.name} <span style="font-size:0.7rem;color:var(--text-dim);font-weight:400">#\${ag.id}</span></div>
       \${ag.description ? '<div class="group-card-desc">' + ag.description + '</div>' : ''}
       <div class="group-card-services">\${scopeLabel}\${svcChips}</div>
+      \${delegateChips}
       <div class="group-card-footer">
         <span class="group-card-meta">\${ag.toolCount} \${toolWord}</span>
         <button class="btn btn-ghost btn-sm ml-auto" onclick="switchToDispatchAs('\${ag.id}')">▶ Try</button>
@@ -1080,13 +1166,20 @@ const HTML = /* html */ `<!DOCTYPE html>
   }
 
   async function createAgent() {
-    const id    = document.getElementById('new-agent-id').value.trim();
-    const name  = document.getElementById('new-agent-name').value.trim();
-    const scene = document.getElementById('new-agent-scene').value.trim();
-    const svcs  = document.getElementById('new-agent-svcs').value.split(',').map(s => s.trim()).filter(Boolean);
-    const desc  = document.getElementById('new-agent-desc').value.trim();
+    const id       = document.getElementById('new-agent-id').value.trim();
+    const name     = document.getElementById('new-agent-name').value.trim();
+    const scene    = document.getElementById('new-agent-scene').value.trim();
+    const svcs     = document.getElementById('new-agent-svcs').value.split(',').map(s => s.trim()).filter(Boolean);
+    const desc     = document.getElementById('new-agent-desc').value.trim();
+    const delegate = document.getElementById('new-agent-delegate').value.split(',').map(s => s.trim()).filter(Boolean);
     if (!id || !name) { toast('ID and Name are required', false); return; }
-    const body = { id, name, description: desc || undefined, sceneId: scene || undefined, allowedServices: svcs.length ? svcs : undefined };
+    const body = {
+      id, name,
+      description: desc || undefined,
+      sceneId: scene || undefined,
+      allowedServices: svcs.length ? svcs : undefined,
+      canDelegateTo: delegate.length ? delegate : undefined,
+    };
     const res = await fetch('/api/agents', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -1094,6 +1187,112 @@ const HTML = /* html */ `<!DOCTYPE html>
     const data = await res.json();
     if (data.ok) { toast('Agent "' + name + '" created ✓'); toggleCreateForm('agent'); await loadAll(); }
     else toast('Error: ' + data.error, false);
+  }
+
+  // ── Delegation helpers ─────────────────────────────────────────────────────
+
+  function toggleDelegateForm() {
+    const form = document.getElementById('delegate-try-form');
+    form.classList.toggle('open');
+    if (form.classList.contains('open')) {
+      populateDelegateFromSelect();
+    }
+  }
+
+  function populateDelegateFromSelect() {
+    const sel = document.getElementById('delegate-from');
+    sel.innerHTML = '<option value="">— choose —</option>'
+      + allAgents.map(a => '<option value="' + a.id + '">' + a.name + ' (' + a.id + ')</option>').join('');
+    document.getElementById('delegate-to').innerHTML = '<option value="">— choose from-agent first —</option>';
+    document.getElementById('delegate-tool').innerHTML = '<option value="">— choose to-agent first —</option>';
+  }
+
+  function populateDelegateTargets() {
+    const fromId = document.getElementById('delegate-from').value;
+    const from = allAgents.find(a => a.id === fromId);
+    const toSel = document.getElementById('delegate-to');
+    if (!from) { toSel.innerHTML = '<option value="">— choose from-agent first —</option>'; return; }
+    const canDelegate = from.canDelegateTo || [];
+    const targets = canDelegate.includes('*')
+      ? allAgents.filter(a => a.id !== fromId)
+      : allAgents.filter(a => canDelegate.includes(a.id));
+    toSel.innerHTML = '<option value="">— choose —</option>'
+      + (targets.length
+          ? targets.map(a => '<option value="' + a.id + '">' + a.name + ' (' + a.id + ')</option>').join('')
+          : '<option disabled>(no delegation targets permitted)</option>');
+    document.getElementById('delegate-tool').innerHTML = '<option value="">— choose to-agent first —</option>';
+  }
+
+  async function populateDelegateTools() {
+    const toId = document.getElementById('delegate-to').value;
+    const toolSel = document.getElementById('delegate-tool');
+    if (!toId) { toolSel.innerHTML = '<option value="">— choose to-agent first —</option>'; return; }
+    try {
+      const tools = await fetch('/api/agents/' + toId + '/tools').then(r => r.json());
+      toolSel.innerHTML = '<option value="">— choose tool —</option>'
+        + tools.map(t => '<option value="' + t.name + '">' + t.name + ' — ' + t.description + '</option>').join('');
+    } catch { toolSel.innerHTML = '<option value="">Failed to load tools</option>'; }
+  }
+
+  async function submitDelegate() {
+    const fromId = document.getElementById('delegate-from').value;
+    const toId   = document.getElementById('delegate-to').value;
+    const tool   = document.getElementById('delegate-tool').value;
+    const argsRaw = document.getElementById('delegate-args').value.trim();
+    if (!fromId || !toId || !tool) { toast('From, To, and Tool are required', false); return; }
+    let args = {};
+    if (argsRaw) {
+      try { args = JSON.parse(argsRaw); }
+      catch { toast('Arguments must be valid JSON', false); return; }
+    }
+    const btn = document.querySelector('#delegate-try-form .btn-primary');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending...';
+    const res = await fetch('/api/agents/' + fromId + '/delegate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toAgentId: toId, toolName: tool, arguments: args }),
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.innerHTML = '📨 Send Delegation';
+    if (data.ok) {
+      toast('Delegation succeeded ✓');
+      toggleDelegateForm();
+      await refreshDelegationLog();
+    } else {
+      toast('Delegation failed: ' + data.error, false);
+      await refreshDelegationLog();
+    }
+  }
+
+  async function refreshDelegationLog() {
+    const container = document.getElementById('delegation-log-container');
+    try {
+      const log = await fetch('/api/delegation-log').then(r => r.json());
+      if (!log.length) {
+        container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem">No delegations recorded yet.</div>';
+        return;
+      }
+      container.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px">'
+        + log.map(entry => {
+          const ts = new Date(entry.timestamp).toLocaleTimeString();
+          const statusColor = entry.success ? 'var(--success,#22c55e)' : 'var(--danger,#ef4444)';
+          const statusIcon  = entry.success ? '✓' : '✗';
+          const outputStr   = entry.success
+            ? (typeof entry.output === 'object' ? JSON.stringify(entry.output).slice(0, 120) : String(entry.output ?? '').slice(0, 120))
+            : entry.error;
+          return \`<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid \${statusColor};border-radius:6px;padding:8px 12px;font-size:0.78rem">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span style="color:var(--text-dim)">\${ts}</span>
+              <span style="font-weight:600">🤖 \${entry.fromAgentId}</span>
+              <span style="color:var(--accent)">→</span>
+              <span style="font-weight:600">🤖 \${entry.toAgentId}</span>
+              <span style="font-family:monospace;background:var(--bg);padding:1px 6px;border-radius:4px">\${entry.toolName}</span>
+              <span style="margin-left:auto;color:\${statusColor};font-weight:600">\${statusIcon}</span>
+            </div>
+            <div style="color:var(--text-dim);font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\${outputStr || '—'}</div>
+          </div>\`;
+        }).join('')
+        + '</div>';
+    } catch { container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem">Failed to load delegation log.</div>'; }
   }
 
   // ── Plugins tab ───────────────────────────────────────────────────────────
