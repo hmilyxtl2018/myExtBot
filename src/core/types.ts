@@ -77,3 +77,78 @@ export interface McpService {
    */
   execute(call: ToolCall): Promise<ToolResult>;
 }
+
+// ── Scene ───────────────────────────────────────────────────────────────────
+
+/**
+ * A Scene groups one or more services by use-case (e.g. "Research", "Productivity").
+ * Scenes make it easy to present the LLM with only the tools relevant to the
+ * current user intent, reducing prompt noise and improving tool selection accuracy.
+ */
+export interface Scene {
+  /** Unique identifier for this scene (e.g. "research"). */
+  id: string;
+  /** Human-readable display name. */
+  name: string;
+  /** Optional description of when to use this scene. */
+  description?: string;
+  /**
+   * Names of the McpServices that belong to this scene.
+   * Only enabled services in this list will expose their tools when the scene is active.
+   */
+  serviceNames: string[];
+}
+
+// ── Agent ───────────────────────────────────────────────────────────────────
+
+/**
+ * An AgentProfile defines a named LLM persona with a specific, restricted set
+ * of tools.  When the LLM operates as a particular agent only the tools allowed
+ * by that agent's profile are exposed, providing access-control and focus.
+ *
+ * An agent may optionally be scoped to a scene; if so, it further restricts the
+ * scene's tool set to the services listed in `allowedServices`.
+ */
+export interface AgentProfile {
+  /** Unique identifier for this agent (e.g. "research-bot"). */
+  id: string;
+  /** Human-readable display name (e.g. "Research Bot"). */
+  name: string;
+  /** Optional description of the agent's purpose or persona. */
+  description?: string;
+  /**
+   * Optional scene this agent is associated with.
+   * When set, the agent inherits the scene's service list as a starting point.
+   */
+  sceneId?: string;
+  /**
+   * Explicit list of service names this agent is allowed to use.
+   * If omitted (and no sceneId is given), the agent can use all enabled services.
+   * If both `sceneId` and `allowedServices` are provided, `allowedServices` takes
+   * precedence (use it to further restrict a scene's service set).
+   */
+  allowedServices?: string[];
+}
+
+/**
+ * Summary row returned by `McpServiceListManager.listAgents()`.
+ */
+export interface AgentSummary {
+  id: string;
+  name: string;
+  description?: string;
+  sceneId?: string;
+  allowedServices?: string[];
+  toolCount: number;
+}
+
+/**
+ * Summary row returned by `McpServiceListManager.listScenes()`.
+ */
+export interface SceneSummary {
+  id: string;
+  name: string;
+  description?: string;
+  serviceNames: string[];
+  toolCount: number;
+}

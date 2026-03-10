@@ -3,11 +3,20 @@
  *
  * Exposes:
  *   GET  /            — single-page management UI
- *   GET  /api/services        — list all registered services
- *   POST /api/services/:name/enable  — enable a service
- *   POST /api/services/:name/disable — disable a service
- *   GET  /api/tools           — get all tool definitions (enabled services only)
- *   POST /api/dispatch        — dispatch a tool call  { toolName, arguments }
+ *   GET  /api/services                    — list all registered services
+ *   POST /api/services/:name/enable       — enable a service
+ *   POST /api/services/:name/disable      — disable a service
+ *   GET  /api/tools                       — get all tool definitions (enabled services only)
+ *   POST /api/dispatch                    — dispatch a tool call  { toolName, arguments }
+ *
+ *   GET  /api/scenes                      — list all scenes
+ *   POST /api/scenes                      — create a scene  { id, name, description?, serviceNames }
+ *   DELETE /api/scenes/:id                — remove a scene
+ *
+ *   GET  /api/agents                      — list all agent profiles
+ *   POST /api/agents                      — create an agent  { id, name, description?, sceneId?, allowedServices? }
+ *   DELETE /api/agents/:id                — remove an agent
+ *   POST /api/dispatch-as/:agentId        — dispatch a tool call as a specific agent
  *
  * Run:  npm run server
  */
@@ -17,7 +26,7 @@ import { McpServiceListManager } from "./core/McpServiceListManager";
 import { SearchService } from "./services/SearchService";
 import { CalendarService } from "./services/CalendarService";
 import { CodeRunnerService } from "./services/CodeRunnerService";
-import { ToolCall } from "./core/types";
+import { AgentProfile, Scene, ToolCall } from "./core/types";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -25,6 +34,58 @@ const manager = new McpServiceListManager();
 manager.register(new SearchService());
 manager.register(new CalendarService());
 manager.register(new CodeRunnerService());
+
+// Seed default scenes
+manager.registerScene({
+  id: "research",
+  name: "Research",
+  description: "Web research and information gathering tasks.",
+  serviceNames: ["SearchService"],
+});
+manager.registerScene({
+  id: "productivity",
+  name: "Productivity",
+  description: "Calendar and scheduling tasks.",
+  serviceNames: ["CalendarService"],
+});
+manager.registerScene({
+  id: "dev",
+  name: "Development",
+  description: "Coding, scripting, and automation tasks.",
+  serviceNames: ["CodeRunnerService"],
+});
+manager.registerScene({
+  id: "full",
+  name: "Full Access",
+  description: "All services — for power users.",
+  serviceNames: ["SearchService", "CalendarService", "CodeRunnerService"],
+});
+
+// Seed default agents
+manager.registerAgent({
+  id: "research-bot",
+  name: "Research Bot",
+  description: "Specialized in web search and information retrieval.",
+  sceneId: "research",
+});
+manager.registerAgent({
+  id: "scheduling-assistant",
+  name: "Scheduling Assistant",
+  description: "Manages calendar events and scheduling.",
+  sceneId: "productivity",
+});
+manager.registerAgent({
+  id: "dev-bot",
+  name: "Dev Bot",
+  description: "Runs code snippets and searches for documentation.",
+  allowedServices: ["CodeRunnerService", "SearchService"],
+});
+manager.registerAgent({
+  id: "full-agent",
+  name: "Full Agent",
+  description: "Unrestricted access to all registered services.",
+  sceneId: "full",
+});
 
 const app = express();
 app.use(express.json());
@@ -70,6 +131,84 @@ app.post("/api/dispatch", async (req: Request, res: Response) => {
     const call: ToolCall = { toolName, arguments: args ?? {} };
     const result = await manager.dispatch(call);
     res.json({ ok: true, result });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+// ── Scenes API ───────────────────────────────────────────────────────────────
+
+app.get("/api/scenes", (_req: Request, res: Response) => {
+  res.json(manager.listScenes());
+});
+
+app.post("/api/scenes", (req: Request, res: Response) => {
+  const { id, name, description, serviceNames } = req.body as Partial<Scene>;
+  if (!id || !name || !Array.isArray(serviceNames)) {
+    res.status(400).json({ ok: false, error: "id, name and serviceNames are required" });
+    return;
+  }
+  try {
+    manager.registerScene({ id, name, description, serviceNames });
+    res.json({ ok: true, scene: manager.listScenes().find((s) => s.id === id) });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+app.delete("/api/scenes/:id", (req: Request, res: Response) => {
+  manager.removeScene(String(req.params.id));
+  res.json({ ok: true });
+});
+
+// ── Agents API ───────────────────────────────────────────────────────────────
+
+app.get("/api/agents/:id/tools", (req: Request, res: Response) => {
+  try {
+    res.json(manager.getToolDefinitionsForAgent(String(req.params.id)));
+  } catch (e) {
+    res.status(404).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+app.get("/api/agents", (_req: Request, res: Response) => {
+  res.json(manager.listAgents());
+});
+
+app.post("/api/agents", (req: Request, res: Response) => {
+  const { id, name, description, sceneId, allowedServices } =
+    req.body as Partial<AgentProfile>;
+  if (!id || !name) {
+    res.status(400).json({ ok: false, error: "id and name are required" });
+    return;
+  }
+  try {
+    manager.registerAgent({ id, name, description, sceneId, allowedServices });
+    res.json({ ok: true, agent: manager.listAgents().find((a) => a.id === id) });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+app.delete("/api/agents/:id", (req: Request, res: Response) => {
+  manager.removeAgent(String(req.params.id));
+  res.json({ ok: true });
+});
+
+app.post("/api/dispatch-as/:agentId", async (req: Request, res: Response) => {
+  const agentId = String(req.params.agentId);
+  const { toolName, arguments: args } = req.body as {
+    toolName?: string;
+    arguments?: Record<string, unknown>;
+  };
+  if (!toolName) {
+    res.status(400).json({ ok: false, error: "toolName is required" });
+    return;
+  }
+  try {
+    const call: ToolCall = { toolName, arguments: args ?? {} };
+    const result = await manager.dispatchAs(agentId, call);
+    res.json({ ok: true, agentId, result });
   } catch (e) {
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
@@ -372,9 +511,68 @@ const HTML = /* html */ `<!DOCTYPE html>
     .ml-auto { margin-left: auto; }
     .mb-8 { margin-bottom: 8px; }
 
+    /* ── Tabs ── */
+    .tab-bar {
+      display: flex; gap: 4px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 28px;
+    }
+    .tab-btn {
+      border: none; background: none; cursor: pointer;
+      font-family: inherit; font-size: 0.83rem; font-weight: 600;
+      padding: 10px 18px; border-radius: 8px 8px 0 0;
+      color: var(--text-dim); transition: color 0.15s, background 0.15s;
+      border-bottom: 2px solid transparent; margin-bottom: -2px;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--bg); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--bg); }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Scene / Agent cards ── */
+    .group-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .group-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      display: flex; flex-direction: column; gap: 8px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .group-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+    .group-card-title { font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+    .group-card-desc  { font-size: 0.78rem; color: var(--text-dim); line-height: 1.45; }
+    .group-card-meta  { font-size: 0.72rem; color: var(--text-dim); }
+    .group-card-services { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+    .svc-chip {
+      font-size: 0.7rem; font-weight: 600; padding: 2px 8px;
+      border-radius: 100px; background: var(--tag-bg);
+      color: var(--accent); border: 1px solid rgba(79,70,229,0.2);
+    }
+    .group-card-footer { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; display: flex; gap: 8px; align-items: center; }
+
+    /* ── Create form (collapsible) ── */
+    .create-form {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-bottom: 24px;
+      display: none;
+    }
+    .create-form.open { display: block; }
+    .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .form-grid-1 { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 12px; }
+
     @media (max-width: 600px) {
       .form-row { grid-template-columns: 1fr; }
       .stats-bar { gap: 10px; }
+      .form-grid-2 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -384,7 +582,7 @@ const HTML = /* html */ `<!DOCTYPE html>
   <div class="logo">🤖</div>
   <div>
     <h1>MCP Services Manager</h1>
-    <div class="subtitle">Manage and monitor LLM tool services</div>
+    <div class="subtitle">Manage and monitor LLM tool services — with Scenes &amp; Agents</div>
   </div>
   <div class="status-dot" title="Server running"></div>
 </header>
@@ -396,37 +594,122 @@ const HTML = /* html */ `<!DOCTYPE html>
     <div class="stat-card"><div class="stat-value green"  id="stat-enabled">—</div><div class="stat-label">Enabled</div></div>
     <div class="stat-card"><div class="stat-value red"    id="stat-disabled">—</div><div class="stat-label">Disabled</div></div>
     <div class="stat-card"><div class="stat-value purple" id="stat-tools">—</div><div class="stat-label">Active Tools</div></div>
+    <div class="stat-card"><div class="stat-value purple" id="stat-scenes">—</div><div class="stat-label">Scenes</div></div>
+    <div class="stat-card"><div class="stat-value purple" id="stat-agents">—</div><div class="stat-label">Agents</div></div>
   </div>
 
-  <!-- Services -->
-  <div class="flex-gap mb-8">
-    <div class="section-title" style="margin:0">Registered Services</div>
-    <button class="btn btn-ghost btn-sm ml-auto" onclick="loadServices()">↻ Refresh</button>
-  </div>
-  <div class="services-grid" id="services-grid">
-    <div style="color:var(--text-dim); font-size:0.85rem; grid-column:1/-1;">Loading services…</div>
+  <!-- Tab bar -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="services" onclick="switchTab('services', this)">⚙️ Services</button>
+    <button class="tab-btn"        data-tab="scenes"   onclick="switchTab('scenes',   this)">🗂 Scenes</button>
+    <button class="tab-btn"        data-tab="agents"   onclick="switchTab('agents',   this)">🤖 Agents</button>
+    <button class="tab-btn"        data-tab="dispatch" onclick="switchTab('dispatch', this)">▶ Tool Call</button>
+  </nav>
+
+  <!-- ── TAB: Services ── -->
+  <div class="tab-pane active" id="tab-services">
+    <div class="flex-gap mb-8">
+      <div class="section-title" style="margin:0">Registered Services</div>
+      <button class="btn btn-ghost btn-sm ml-auto" onclick="loadAll()">↻ Refresh</button>
+    </div>
+    <div class="services-grid" id="services-grid">
+      <div style="color:var(--text-dim); font-size:0.85rem; grid-column:1/-1;">Loading services…</div>
+    </div>
   </div>
 
-  <!-- Dispatch -->
-  <div class="section-title">Try a Tool Call</div>
-  <div class="dispatch-section">
-    <div class="form-row">
-      <div>
-        <label for="tool-select">Tool</label>
-        <select id="tool-select" onchange="onToolSelect()">
-          <option value="">— select a tool —</option>
-        </select>
+  <!-- ── TAB: Scenes ── -->
+  <div class="tab-pane" id="tab-scenes">
+    <div class="flex-gap mb-8">
+      <div class="section-title" style="margin:0">Scenes</div>
+      <button class="btn btn-primary btn-sm ml-auto" onclick="toggleCreateForm('scene')">＋ New Scene</button>
+    </div>
+
+    <!-- Create scene form -->
+    <div class="create-form" id="create-scene-form">
+      <div class="form-grid-2">
+        <div><label>Scene ID (slug)</label><input id="new-scene-id" type="text" placeholder="research" /></div>
+        <div><label>Display Name</label><input id="new-scene-name" type="text" placeholder="Research" /></div>
       </div>
-      <div>
-        <label for="tool-args">Arguments (JSON)</label>
-        <input id="tool-args" type="text" placeholder='{"query": "hello world"}' />
+      <div class="form-grid-1">
+        <div><label>Description</label><input id="new-scene-desc" type="text" placeholder="Optional description" /></div>
+        <div><label>Service names (comma-separated)</label><input id="new-scene-svcs" type="text" placeholder="SearchService, CalendarService" /></div>
       </div>
-      <div>
-        <label>&nbsp;</label>
-        <button class="btn btn-primary" onclick="dispatchTool()" id="dispatch-btn">▶ Run</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="createScene()">Create Scene</button>
+        <button class="btn btn-ghost btn-sm"  onclick="toggleCreateForm('scene')">Cancel</button>
       </div>
     </div>
-    <div id="dispatch-result" class="dispatch-result"></div>
+
+    <div class="group-grid" id="scenes-grid">
+      <div style="color:var(--text-dim)">Loading scenes…</div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Agents ── -->
+  <div class="tab-pane" id="tab-agents">
+    <div class="flex-gap mb-8">
+      <div class="section-title" style="margin:0">Agent Profiles</div>
+      <button class="btn btn-primary btn-sm ml-auto" onclick="toggleCreateForm('agent')">＋ New Agent</button>
+    </div>
+
+    <!-- Create agent form -->
+    <div class="create-form" id="create-agent-form">
+      <div class="form-grid-2">
+        <div><label>Agent ID (slug)</label><input id="new-agent-id" type="text" placeholder="my-bot" /></div>
+        <div><label>Display Name</label><input id="new-agent-name" type="text" placeholder="My Bot" /></div>
+      </div>
+      <div class="form-grid-2">
+        <div><label>Scene ID (optional)</label><input id="new-agent-scene" type="text" placeholder="research" /></div>
+        <div><label>Allowed services (comma-separated, overrides scene)</label><input id="new-agent-svcs" type="text" placeholder="SearchService" /></div>
+      </div>
+      <div class="form-grid-1">
+        <div><label>Description</label><input id="new-agent-desc" type="text" placeholder="Optional description" /></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="createAgent()">Create Agent</button>
+        <button class="btn btn-ghost btn-sm"  onclick="toggleCreateForm('agent')">Cancel</button>
+      </div>
+    </div>
+
+    <div class="group-grid" id="agents-grid">
+      <div style="color:var(--text-dim)">Loading agents…</div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Dispatch ── -->
+  <div class="tab-pane" id="tab-dispatch">
+    <div class="section-title">Try a Tool Call</div>
+    <div class="dispatch-section">
+      <div class="form-row" style="grid-template-columns:1fr 1fr auto;margin-bottom:10px">
+        <div>
+          <label for="dispatch-agent">Act as Agent (optional)</label>
+          <select id="dispatch-agent">
+            <option value="">— all tools (no agent) —</option>
+          </select>
+        </div>
+        <div>
+          <label for="tool-select">Tool</label>
+          <select id="tool-select" onchange="onToolSelect()">
+            <option value="">— select a tool —</option>
+          </select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn btn-ghost btn-sm" onclick="refreshToolSelect()">↻</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div style="grid-column:1/-1">
+          <label for="tool-args">Arguments (JSON)</label>
+          <input id="tool-args" type="text" placeholder='{"query": "hello world"}' />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn btn-primary" onclick="dispatchTool()" id="dispatch-btn">▶ Run</button>
+        </div>
+      </div>
+      <div id="dispatch-result" class="dispatch-result"></div>
+    </div>
   </div>
 </main>
 
@@ -439,9 +722,14 @@ const HTML = /* html */ `<!DOCTYPE html>
     CalendarService:    '📅',
     CodeRunnerService:  '⚡',
   };
+  function icon(name) { return ICONS[name] || '🧩'; }
 
-  function icon(name) {
-    return ICONS[name] || '🧩';
+  // ── Tab navigation ────────────────────────────────────────────────────────
+  function switchTab(id, btn) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    btn.classList.add('active');
   }
 
   // ── Toast helper ──────────────────────────────────────────────────────────
@@ -454,33 +742,42 @@ const HTML = /* html */ `<!DOCTYPE html>
     toastTimer = setTimeout(() => { el.className = 'toast'; }, 2800);
   }
 
-  // ── Load & render services ────────────────────────────────────────────────
-  let allServices = [];
+  // ── Load everything ───────────────────────────────────────────────────────
+  let allServices = [], allScenes = [], allAgents = [];
 
-  async function loadServices() {
+  async function loadAll() {
     try {
-      const [svcs, tools] = await Promise.all([
+      const [svcs, tools, scenes, agents] = await Promise.all([
         fetch('/api/services').then(r => r.json()),
         fetch('/api/tools').then(r => r.json()),
+        fetch('/api/scenes').then(r => r.json()),
+        fetch('/api/agents').then(r => r.json()),
       ]);
       allServices = svcs;
+      allScenes   = scenes;
+      allAgents   = agents;
+      renderStats(svcs, tools, scenes, agents);
       renderServices(svcs);
-      renderStats(svcs, tools);
+      renderScenes(scenes);
+      renderAgents(agents);
       populateToolSelect(tools);
+      populateAgentSelect(agents);
     } catch (e) {
-      document.getElementById('services-grid').innerHTML =
-        '<div style="color:var(--red)">Failed to load services: ' + e.message + '</div>';
+      toast('Failed to load data: ' + e.message, false);
     }
   }
 
-  function renderStats(svcs, tools) {
+  function renderStats(svcs, tools, scenes, agents) {
     const enabled = svcs.filter(s => s.enabled).length;
-    document.getElementById('stat-total').textContent   = svcs.length;
-    document.getElementById('stat-enabled').textContent = enabled;
+    document.getElementById('stat-total').textContent    = svcs.length;
+    document.getElementById('stat-enabled').textContent  = enabled;
     document.getElementById('stat-disabled').textContent = svcs.length - enabled;
-    document.getElementById('stat-tools').textContent   = tools.length;
+    document.getElementById('stat-tools').textContent    = tools.length;
+    document.getElementById('stat-scenes').textContent   = scenes.length;
+    document.getElementById('stat-agents').textContent   = agents.length;
   }
 
+  // ── Services tab ──────────────────────────────────────────────────────────
   function renderServices(svcs) {
     const grid = document.getElementById('services-grid');
     if (!svcs.length) {
@@ -518,65 +815,189 @@ const HTML = /* html */ `<!DOCTYPE html>
 
   async function toggleTools(name) {
     const panel = document.getElementById('tools-' + name);
-    if (panel.classList.contains('open')) {
-      panel.classList.remove('open');
-      return;
-    }
+    if (panel.classList.contains('open')) { panel.classList.remove('open'); return; }
     panel.classList.add('open');
     if (panel.dataset.loaded) return;
-
     try {
-      panel.innerHTML = await renderToolsForService(name);
+      const svc = allServices.find(s => s.name === name);
+      if (!svc || !svc.enabled) {
+        panel.innerHTML = '<div style="color:var(--text-dim);font-size:0.78rem;padding:4px 0">Enable this service to inspect its tools.</div>';
+        panel.dataset.loaded = '1'; return;
+      }
+      const tools = await fetch('/api/tools').then(r => r.json());
+      panel.innerHTML = tools.length ? tools.map(t => toolItemHTML(t)).join('') : '<div style="color:var(--text-dim);font-size:0.78rem">No active tools.</div>';
       panel.dataset.loaded = '1';
     } catch (e) {
       panel.innerHTML = '<div style="color:var(--red);font-size:0.8rem">Error: ' + e.message + '</div>';
     }
   }
 
-  async function renderToolsForService(serviceName) {
-    // Fetch tool definitions — only enabled services are returned by /api/tools
-    // We'll show a note if the service is disabled
-    const svc = allServices.find(s => s.name === serviceName);
-    if (!svc || !svc.enabled) {
-      return '<div style="color:var(--text-dim);font-size:0.78rem;padding:4px 0">Enable this service to inspect its tools.</div>';
-    }
-    const tools = await fetch('/api/tools').then(r => r.json());
-    const filtered = tools; // /api/tools returns all enabled tools — we show all here for context
-    if (!filtered.length) return '<div style="color:var(--text-dim);font-size:0.78rem">No active tools.</div>';
-    return filtered.map(t => \`
-      <div class="tool-item">
-        <div class="tool-name">\${t.name}</div>
-        <div class="tool-desc">\${t.description}</div>
-        <div class="tool-params">
-          \${Object.entries(t.parameters.properties || {}).map(([k, v]) => {
-            const req = (t.parameters.required || []).includes(k);
-            return '<span class="param-tag' + (req ? ' required' : '') + '">' + k + ': ' + v.type + (req ? ' *' : '') + '</span>';
-          }).join('')}
-        </div>
+  function toolItemHTML(t) {
+    return \`<div class="tool-item">
+      <div class="tool-name">\${t.name}</div>
+      <div class="tool-desc">\${t.description}</div>
+      <div class="tool-params">
+        \${Object.entries(t.parameters.properties || {}).map(([k, v]) => {
+          const req = (t.parameters.required || []).includes(k);
+          return '<span class="param-tag' + (req ? ' required' : '') + '">' + k + ': ' + v.type + (req ? ' *' : '') + '</span>';
+        }).join('')}
       </div>
-    \`).join('');
+    </div>\`;
   }
 
-  // ── Enable / Disable ──────────────────────────────────────────────────────
   async function toggleService(name, enable) {
     const action = enable ? 'enable' : 'disable';
     const card = document.getElementById('card-' + name);
-    const btns = card.querySelectorAll('.btn');
-    btns.forEach(b => b.disabled = true);
-
+    card.querySelectorAll('.btn').forEach(b => b.disabled = true);
     try {
       const res = await fetch('/api/services/' + name + '/' + action, { method: 'POST' });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
       toast(name + (enable ? ' enabled ✓' : ' disabled'), enable);
-      await loadServices();
+      await loadAll();
     } catch (e) {
       toast('Error: ' + e.message, false);
-      btns.forEach(b => b.disabled = false);
+      card.querySelectorAll('.btn').forEach(b => b.disabled = false);
     }
   }
 
-  // ── Tool dispatch ─────────────────────────────────────────────────────────
+  // ── Scenes tab ────────────────────────────────────────────────────────────
+  function renderScenes(scenes) {
+    const grid = document.getElementById('scenes-grid');
+    if (!scenes.length) {
+      grid.innerHTML = '<div style="color:var(--text-dim)">No scenes registered.</div>';
+      return;
+    }
+    grid.innerHTML = scenes.map(sc => sceneCardHTML(sc)).join('');
+  }
+
+  function sceneCardHTML(sc) {
+    const chips = sc.serviceNames.map(n =>
+      '<span class="svc-chip">' + icon(n) + ' ' + n + '</span>'
+    ).join('');
+    const toolWord = sc.toolCount === 1 ? 'tool' : 'tools';
+    return \`<div class="group-card">
+      <div class="group-card-title">🗂 \${sc.name} <span style="font-size:0.7rem;color:var(--text-dim);font-weight:400">#\${sc.id}</span></div>
+      \${sc.description ? '<div class="group-card-desc">' + sc.description + '</div>' : ''}
+      <div class="group-card-services">\${chips}</div>
+      <div class="group-card-footer">
+        <span class="group-card-meta">\${sc.toolCount} \${toolWord}</span>
+        <button class="btn btn-danger btn-sm ml-auto" onclick="deleteScene('\${sc.id}')">🗑 Remove</button>
+      </div>
+    </div>\`;
+  }
+
+  async function deleteScene(id) {
+    if (!confirm('Remove scene "' + id + '"?')) return;
+    const res = await fetch('/api/scenes/' + id, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) { toast('Scene removed'); await loadAll(); }
+    else toast('Error: ' + data.error, false);
+  }
+
+  async function createScene() {
+    const id   = document.getElementById('new-scene-id').value.trim();
+    const name = document.getElementById('new-scene-name').value.trim();
+    const desc = document.getElementById('new-scene-desc').value.trim();
+    const svcs = document.getElementById('new-scene-svcs').value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!id || !name || !svcs.length) { toast('ID, Name and at least one Service are required', false); return; }
+    const res = await fetch('/api/scenes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name, description: desc || undefined, serviceNames: svcs }),
+    });
+    const data = await res.json();
+    if (data.ok) { toast('Scene "' + name + '" created ✓'); toggleCreateForm('scene'); await loadAll(); }
+    else toast('Error: ' + data.error, false);
+  }
+
+  // ── Agents tab ────────────────────────────────────────────────────────────
+  function renderAgents(agents) {
+    const grid = document.getElementById('agents-grid');
+    if (!agents.length) {
+      grid.innerHTML = '<div style="color:var(--text-dim)">No agents registered.</div>';
+      return;
+    }
+    grid.innerHTML = agents.map(ag => agentCardHTML(ag)).join('');
+  }
+
+  function agentCardHTML(ag) {
+    const toolWord = ag.toolCount === 1 ? 'tool' : 'tools';
+    const scopeLabel = ag.allowedServices
+      ? '<span class="svc-chip">explicit services</span>'
+      : ag.sceneId
+        ? '<span class="svc-chip">scene: ' + ag.sceneId + '</span>'
+        : '<span class="svc-chip">all services</span>';
+    const svcChips = (ag.allowedServices || []).map(n =>
+      '<span class="svc-chip">' + icon(n) + ' ' + n + '</span>'
+    ).join('');
+    return \`<div class="group-card">
+      <div class="group-card-title">🤖 \${ag.name} <span style="font-size:0.7rem;color:var(--text-dim);font-weight:400">#\${ag.id}</span></div>
+      \${ag.description ? '<div class="group-card-desc">' + ag.description + '</div>' : ''}
+      <div class="group-card-services">\${scopeLabel}\${svcChips}</div>
+      <div class="group-card-footer">
+        <span class="group-card-meta">\${ag.toolCount} \${toolWord}</span>
+        <button class="btn btn-ghost btn-sm ml-auto" onclick="switchToDispatchAs('\${ag.id}')">▶ Try</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAgent('\${ag.id}')">🗑</button>
+      </div>
+    </div>\`;
+  }
+
+  async function deleteAgent(id) {
+    if (!confirm('Remove agent "' + id + '"?')) return;
+    const res = await fetch('/api/agents/' + id, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) { toast('Agent removed'); await loadAll(); }
+    else toast('Error: ' + data.error, false);
+  }
+
+  async function createAgent() {
+    const id    = document.getElementById('new-agent-id').value.trim();
+    const name  = document.getElementById('new-agent-name').value.trim();
+    const scene = document.getElementById('new-agent-scene').value.trim();
+    const svcs  = document.getElementById('new-agent-svcs').value.split(',').map(s => s.trim()).filter(Boolean);
+    const desc  = document.getElementById('new-agent-desc').value.trim();
+    if (!id || !name) { toast('ID and Name are required', false); return; }
+    const body = { id, name, description: desc || undefined, sceneId: scene || undefined, allowedServices: svcs.length ? svcs : undefined };
+    const res = await fetch('/api/agents', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.ok) { toast('Agent "' + name + '" created ✓'); toggleCreateForm('agent'); await loadAll(); }
+    else toast('Error: ' + data.error, false);
+  }
+
+  // ── Dispatch tab ──────────────────────────────────────────────────────────
+  function switchToDispatchAs(agentId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    const dispatchBtn = document.querySelector('.tab-btn[data-tab="dispatch"]');
+    if (dispatchBtn) dispatchBtn.classList.add('active');
+    document.getElementById('tab-dispatch').classList.add('active');
+    document.getElementById('dispatch-agent').value = agentId;
+    refreshToolSelect();
+  }
+
+  function populateAgentSelect(agents) {
+    const sel = document.getElementById('dispatch-agent');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— all tools (no agent) —</option>'
+      + agents.map(a => '<option value="' + a.id + '">' + a.name + ' (' + a.id + ')</option>').join('');
+    if (prev) sel.value = prev;
+  }
+
+  async function refreshToolSelect() {
+    const agentId = document.getElementById('dispatch-agent').value;
+    let tools;
+    if (agentId) {
+      tools = await fetch('/api/agents/' + agentId + '/tools').then(r => r.json());
+      if (!Array.isArray(tools)) tools = await fetch('/api/tools').then(r => r.json());
+    } else {
+      tools = await fetch('/api/tools').then(r => r.json());
+    }
+    populateToolSelect(tools);
+  }
+
   function populateToolSelect(tools) {
     const sel = document.getElementById('tool-select');
     const prev = sel.value;
@@ -588,7 +1009,6 @@ const HTML = /* html */ `<!DOCTYPE html>
   function onToolSelect() {
     const toolName = document.getElementById('tool-select').value;
     if (!toolName) return;
-    // auto-fill example args
     fetch('/api/tools').then(r => r.json()).then(ts => {
       const t = ts.find(x => x.name === toolName);
       if (!t) return;
@@ -603,13 +1023,13 @@ const HTML = /* html */ `<!DOCTYPE html>
   }
 
   async function dispatchTool() {
+    const agentId  = document.getElementById('dispatch-agent').value;
     const toolName = document.getElementById('tool-select').value;
     const argsRaw  = document.getElementById('tool-args').value;
     const resultEl = document.getElementById('dispatch-result');
     const btn      = document.getElementById('dispatch-btn');
 
     if (!toolName) { toast('Please select a tool', false); return; }
-
     let args = {};
     if (argsRaw.trim()) {
       try { args = JSON.parse(argsRaw); }
@@ -621,7 +1041,8 @@ const HTML = /* html */ `<!DOCTYPE html>
     resultEl.className = 'dispatch-result';
 
     try {
-      const res  = await fetch('/api/dispatch', {
+      const url  = agentId ? '/api/dispatch-as/' + agentId : '/api/dispatch';
+      const res  = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ toolName, arguments: args }),
@@ -638,8 +1059,15 @@ const HTML = /* html */ `<!DOCTYPE html>
     }
   }
 
+  // ── Create form toggle ────────────────────────────────────────────────────
+  function toggleCreateForm(type) {
+    const formId = 'create-' + type + '-form';
+    const form = document.getElementById(formId);
+    form.classList.toggle('open');
+  }
+
   // ── Init ──────────────────────────────────────────────────────────────────
-  loadServices();
+  loadAll();
 </script>
 </body>
 </html>`;
