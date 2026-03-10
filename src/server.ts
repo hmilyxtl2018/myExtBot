@@ -21,6 +21,7 @@
  *   GET  /api/plugins                     — list all plugins in the registry (with install status)
  *   GET  /api/plugins/installed           — list installed plugins only
  *   POST /api/plugins/install             — install a plugin  { pluginId }
+ *   POST /api/plugins/install-from-url    — install a plugin from a manifest URL  { url }
  *   DELETE /api/plugins/:pluginId         — uninstall a plugin
  *
  * Run:  npm run server
@@ -241,6 +242,20 @@ app.post("/api/plugins/install", (req: Request, res: Response) => {
   }
   try {
     const summary = pluginManager.install(pluginId);
+    res.json({ ok: true, plugin: summary });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+app.post("/api/plugins/install-from-url", async (req: Request, res: Response) => {
+  const { url } = req.body as { url?: string };
+  if (!url) {
+    res.status(400).json({ ok: false, error: "url is required" });
+    return;
+  }
+  try {
+    const summary = await pluginManager.installFromUrl(url);
     res.json({ ok: true, plugin: summary });
   } catch (e) {
     res.status(400).json({ ok: false, error: (e as Error).message });
@@ -745,7 +760,9 @@ const HTML = /* html */ `<!DOCTYPE html>
   <div class="tab-pane" id="tab-plugins">
     <div class="flex-gap mb-8">
       <div class="section-title" style="margin:0">🔌 Plugin Marketplace</div>
-      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="plugin-search" type="search" placeholder="🔍 Search plugins…" oninput="renderPluginGrid()"
+          style="font-size:0.78rem;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);width:160px" />
         <select id="plugin-filter" onchange="renderPluginGrid()" style="font-size:0.78rem;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
           <option value="all">All plugins</option>
           <option value="available">Available</option>
@@ -754,9 +771,29 @@ const HTML = /* html */ `<!DOCTYPE html>
         <select id="plugin-category-filter" onchange="renderPluginGrid()" style="font-size:0.78rem;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
           <option value="">All categories</option>
         </select>
+        <button class="btn btn-primary btn-sm" onclick="toggleUrlInstallForm()">＋ URL</button>
         <button class="btn btn-ghost btn-sm" onclick="loadAll()">↻ Refresh</button>
       </div>
     </div>
+
+    <!-- Install-from-URL form (collapsible) -->
+    <div class="create-form" id="url-install-form">
+      <div style="font-weight:600;margin-bottom:10px;font-size:0.85rem">Install plugin from manifest URL</div>
+      <div class="form-grid-1" style="margin-bottom:10px">
+        <div>
+          <label>Manifest URL (HTTPS)</label>
+          <input id="url-install-input" type="url" placeholder="https://example.com/my-plugin/manifest.json" />
+        </div>
+      </div>
+      <div style="font-size:0.72rem;color:var(--text-dim);margin-bottom:12px">
+        The URL must point to a valid JSON manifest with the required fields: <code>id, name, version, author, description, category, tools</code>.
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="installFromUrl()">⬇ Install from URL</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleUrlInstallForm()">Cancel</button>
+      </div>
+    </div>
+
     <div class="group-grid" id="plugins-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
       <div style="color:var(--text-dim)">Loading plugins…</div>
     </div>
@@ -1082,10 +1119,16 @@ const HTML = /* html */ `<!DOCTYPE html>
   function renderPluginGrid() {
     const statusFilter   = document.getElementById('plugin-filter').value;
     const categoryFilter = document.getElementById('plugin-category-filter').value;
+    const searchQuery    = (document.getElementById('plugin-search').value || '').trim().toLowerCase();
     let plugins = allPlugins;
     if (statusFilter === 'installed') plugins = plugins.filter(p => p.status === 'installed');
     else if (statusFilter === 'available') plugins = plugins.filter(p => p.status !== 'installed');
     if (categoryFilter) plugins = plugins.filter(p => p.category === categoryFilter);
+    if (searchQuery) plugins = plugins.filter(p =>
+      p.name.toLowerCase().includes(searchQuery) ||
+      p.description.toLowerCase().includes(searchQuery) ||
+      p.author.toLowerCase().includes(searchQuery)
+    );
     const grid = document.getElementById('plugins-grid');
     if (!plugins.length) {
       grid.innerHTML = '<div style="color:var(--text-dim);grid-column:1/-1">No plugins match the filter.</div>';
@@ -1146,6 +1189,35 @@ const HTML = /* html */ `<!DOCTYPE html>
     const data = await res.json();
     if (data.ok) { toast('Plugin uninstalled'); await loadAll(); }
     else toast('Error: ' + data.error, false);
+  }
+
+  function toggleUrlInstallForm() {
+    const form = document.getElementById('url-install-form');
+    form.classList.toggle('open');
+    if (form.classList.contains('open')) {
+      document.getElementById('url-install-input').focus();
+    }
+  }
+
+  async function installFromUrl() {
+    const url = document.getElementById('url-install-input').value.trim();
+    if (!url) { toast('Please enter a URL', false); return; }
+    const btn = document.querySelector('#url-install-form .btn-primary');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Installing…';
+    const res = await fetch('/api/plugins/install-from-url', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    btn.disabled = false; btn.innerHTML = '⬇ Install from URL';
+    if (data.ok) {
+      toast('Plugin "' + data.plugin.name + '" installed ✓');
+      document.getElementById('url-install-input').value = '';
+      toggleUrlInstallForm();
+      await loadAll();
+    } else {
+      toast('Install failed: ' + data.error, false);
+    }
   }
   function switchToDispatchAs(agentId) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));

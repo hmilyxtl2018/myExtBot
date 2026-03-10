@@ -1,6 +1,18 @@
+import * as fs from "fs";
+import * as path from "path";
 import { PluginEntry, PluginManifest, PluginStatus, PluginSummary } from "./types";
 import { McpServiceListManager } from "./McpServiceListManager";
 import { PluginService } from "../services/PluginService";
+
+/**
+ * Persisted shape stored in plugins-state.json.
+ * Only the minimal information required to restore the installation state is
+ * saved; the full manifest is re-loaded from the built-in registry on startup.
+ */
+interface PersistedState {
+  /** Map of pluginId → stored entry (manifests for custom/URL-installed plugins are included). */
+  installed: Record<string, { manifest: PluginManifest; installedAt: string }>;
+}
 
 /**
  * PluginManager is the plugin marketplace engine for myExtBot.
@@ -11,6 +23,8 @@ import { PluginService } from "../services/PluginService";
  * - Installing plugins: creating a PluginService and registering it with the
  *   McpServiceListManager so its tools become immediately usable by the LLM
  * - Uninstalling plugins: removing the service from the manager
+ * - Persisting installed state to plugins-state.json so it survives restarts
+ * - Installing plugins from arbitrary HTTPS manifest URLs (custom plugins)
  * - Exposing listing and search APIs for the UI and REST layer
  *
  * In production the registry catalog would be populated by fetching a remote
@@ -21,10 +35,14 @@ import { PluginService } from "../services/PluginService";
 export class PluginManager {
   private catalog: Map<string, PluginEntry> = new Map();
   private serviceManager: McpServiceListManager;
+  /** Absolute path to the JSON file used for persistence. */
+  private stateFile: string;
 
-  constructor(serviceManager: McpServiceListManager) {
+  constructor(serviceManager: McpServiceListManager, stateFile?: string) {
     this.serviceManager = serviceManager;
+    this.stateFile = stateFile ?? path.resolve(process.cwd(), "plugins-state.json");
     this.seedBuiltinRegistry();
+    this.loadPersistedState();
   }
 
   // ── Registry management ───────────────────────────────────────────────────
@@ -92,6 +110,7 @@ export class PluginManager {
         error: undefined,
       };
       this.catalog.set(pluginId, updated);
+      this.saveState();
       return this.toSummary(updated);
     } catch (err) {
       const errEntry: PluginEntry = {
@@ -131,6 +150,129 @@ export class PluginManager {
       installedAt: undefined,
       error: undefined,
     });
+    this.saveState();
+  }
+
+  // ── Install from URL ──────────────────────────────────────────────────────
+
+  /**
+   * Fetches a plugin manifest from an HTTPS URL, validates it, adds it to
+   * the catalog, and installs it immediately.
+   *
+   * The URL must point to a JSON document conforming to the `PluginManifest`
+   * interface.  Only HTTPS URLs are accepted.
+   *
+   * @param url - The HTTPS URL of the plugin manifest JSON.
+   * @returns A summary of the newly installed plugin.
+   * @throws Error if the URL is invalid, the fetch fails, or the manifest is malformed.
+   */
+  async installFromUrl(url: string): Promise<PluginSummary> {
+    if (!url.startsWith("https://") && !url.startsWith("http://")) {
+      throw new Error("Only HTTP(S) URLs are supported.");
+    }
+
+    let manifest: PluginManifest;
+    try {
+      const resp = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+      }
+      manifest = (await resp.json()) as PluginManifest;
+    } catch (err) {
+      throw new Error(`Failed to fetch manifest from "${url}": ${(err as Error).message}`);
+    }
+
+    this.validateManifest(manifest);
+
+    // Always stamp the registryUrl with the source URL.
+    manifest.registryUrl = url;
+
+    // If a plugin with the same id is already installed, reject.
+    const existing = this.catalog.get(manifest.id);
+    if (existing?.status === "installed") {
+      throw new Error(`Plugin "${manifest.id}" is already installed.`);
+    }
+
+    // Add to catalog and install.
+    this.addToRegistry(manifest);
+    return this.install(manifest.id);
+  }
+
+  // ── Persistence ───────────────────────────────────────────────────────────
+
+  /**
+   * Saves the current installation state to `plugins-state.json`.
+   * Only installed plugins are persisted; available/error entries are ephemeral.
+   */
+  private saveState(): void {
+    const installed: PersistedState["installed"] = {};
+    for (const [id, entry] of this.catalog) {
+      if (entry.status === "installed" && entry.installedAt) {
+        installed[id] = { manifest: entry.manifest, installedAt: entry.installedAt };
+      }
+    }
+    try {
+      fs.writeFileSync(this.stateFile, JSON.stringify({ installed }, null, 2), "utf-8");
+    } catch (err) {
+      console.warn(`[PluginManager] Could not save state to ${this.stateFile}:`, (err as Error).message);
+    }
+  }
+
+  /**
+   * Loads the persisted installation state from `plugins-state.json` (if it
+   * exists) and re-installs every previously-installed plugin so the service
+   * list is restored without user interaction.
+   */
+  private loadPersistedState(): void {
+    if (!fs.existsSync(this.stateFile)) return;
+    try {
+      const raw = fs.readFileSync(this.stateFile, "utf-8");
+      const state = JSON.parse(raw) as PersistedState;
+      for (const [id, saved] of Object.entries(state.installed ?? {})) {
+        try {
+          // Ensure the manifest is in the catalog (it may be a custom URL plugin).
+          if (!this.catalog.has(id)) {
+            this.addToRegistry(saved.manifest);
+          }
+          // Skip if somehow already installed by seedBuiltinRegistry.
+          if (this.catalog.get(id)?.status === "installed") continue;
+          const service = new PluginService(saved.manifest);
+          this.serviceManager.register(service);
+          this.serviceManager.enableService(service.name);
+          this.catalog.set(id, {
+            manifest: saved.manifest,
+            status: "installed",
+            installedAt: saved.installedAt,
+          });
+        } catch (err) {
+          console.warn(`[PluginManager] Could not restore plugin "${id}":`, (err as Error).message);
+        }
+      }
+    } catch (err) {
+      console.warn(`[PluginManager] Could not load state from ${this.stateFile}:`, (err as Error).message);
+    }
+  }
+
+  // ── Validation ────────────────────────────────────────────────────────────
+
+  /**
+   * Validates that a plain object has the required fields of a `PluginManifest`.
+   * @throws Error describing the first missing or invalid field.
+   */
+  private validateManifest(m: unknown): asserts m is PluginManifest {
+    const obj = m as Record<string, unknown>;
+    const required: Array<keyof PluginManifest> = ["id", "name", "version", "author", "description", "category", "tools"];
+    for (const field of required) {
+      if (!obj[field]) throw new Error(`Manifest is missing required field: "${field}"`);
+    }
+    if (!Array.isArray(obj.tools) || (obj.tools as unknown[]).length === 0) {
+      throw new Error('Manifest "tools" must be a non-empty array.');
+    }
+    // Allow single-character IDs (e.g. "a") as well as multi-character slugs.
+    const idPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+    if (typeof obj.id === "string" && !idPattern.test(obj.id)) {
+      throw new Error(`Manifest "id" must be a lowercase slug (e.g. "my-plugin"), got: "${obj.id}"`);
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

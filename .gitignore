@@ -2,3 +2,5 @@ node_modules/
 dist/
 *.js.map
 *.d.ts.map
+# Runtime plugin installation state — generated at runtime, not part of source
+plugins-state.json
