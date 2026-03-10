@@ -4,8 +4,35 @@ A Windows-first "digital twin" desktop bot inspired by Cline. Built with:
 
 - **Tauri 2** (Rust backend) + **React** (Vite frontend)
 - **Node.js Playwright sidecar** for browser automation
-- **SQLite** audit log (all events, tool calls, and artifacts)
+- **SQLite** audit log (all events, tool calls, LLM calls, and artifacts)
+- **Planner + Executor** dual-layer LLM architecture
 - **Permissioned tool execution**: every tool call requires user approval
+
+---
+
+## Current Status
+
+> See [PROGRESS.md](PROGRESS.md) for a full breakdown of what is complete, what is a placeholder, and what comes next.
+
+| Layer | Status |
+|-------|--------|
+| Agent FSM (9 states) | ✅ Complete |
+| LLM client (OpenAI-compatible) | ✅ Complete |
+| Planner (prompt → AgentPlan) | ✅ Complete |
+| Executor (plan → tool calls) | ✅ Complete |
+| Plan approval UI (`PlanApprovalModal`) | ✅ Complete |
+| Tool call approval UI (`ApprovalModal`) | ✅ Complete |
+| Audit DB (5 tables + LLM call log) | ✅ Complete |
+| `fs.readFile` | ✅ Implemented |
+| `cmd.run` | ✅ Implemented |
+| `fs.applyPatch` | 🔶 Placeholder |
+| `net.fetch` | 🔶 Placeholder |
+| `desktop.*` (screenshot, OCR, click) | 🔶 Placeholder |
+| Config allowlists from `config.toml` | ⬜ Not wired |
+| Playwright browser sidecar | 🔶 Scaffold only |
+| Credential Vault | ⬜ Not started |
+| Streaming LLM output | ⬜ Not started |
+| Persistent audit DB (on-disk) | ⬜ In-memory only |
 
 ---
 
@@ -13,7 +40,7 @@ A Windows-first "digital twin" desktop bot inspired by Cline. Built with:
 
 ```
 apps/desktop/          ← Tauri app (Rust + React)
-  src-tauri/           ← Rust: event bus, agent state machine, tools, audit
+  src-tauri/           ← Rust: LLM client, Planner, Executor, FSM, tools, audit
   src/                 ← React UI: Chat, Plan, Approval, Audit, EmergencyStop
 services/
   playwright-sidecar/  ← Node.js WebSocket JSON-RPC browser automation server
@@ -54,8 +81,12 @@ copy config.example.toml config.toml
 # Edit config.toml and set your LLM/OCR API keys
 # Set environment variables:
 $env:MYEXTBOT_LLM_API_KEY = "sk-..."
-$env:MYEXTBOT_OCR_API_KEY = "sk-..."
+$env:MYEXTBOT_LLM_BASE_URL = "https://api.openai.com/v1"   # optional; default shown
+$env:MYEXTBOT_LLM_MODEL    = "gpt-4o"                      # optional; default shown
 ```
+
+> **No API key?** `send_message` degrades gracefully: the agent transitions to
+> `Failed` and shows an error in the chat panel — no panic.
 
 ### 3. Start the Playwright sidecar
 
@@ -78,28 +109,33 @@ npm run dev:desktop
 ```
 apps/
   desktop/
-    src/                     # React UI
+    src/                        # React UI
       components/
         ChatPanel.tsx
         PlanPanel.tsx
-        ApprovalModal.tsx
+        ApprovalModal.tsx       # Tool-call approval modal
+        PlanApprovalModal.tsx   # Plan approval modal (new)
         AuditTimeline.tsx
+        AgentLogPanel.tsx
         EmergencyStop.tsx
       hooks/
         useEventStream.ts
       models/
-        events.ts
+        events.ts               # Shared TypeScript types
     src-tauri/
       src/
         main.rs
         lib.rs
-        events.rs            # Typed event model
-        agent.rs             # State machine
-        commands.rs          # Tauri IPC commands
-        permissions.rs       # Allowlist + session cache
-        audit.rs             # SQLite audit logging
+        events.rs               # Typed event model (AgentEvent enum)
+        agent.rs                # 9-state FSM + oneshot approval channels
+        commands.rs             # Tauri IPC commands
+        llm.rs                  # OpenAI-compatible LLM client (new)
+        planner.rs              # Planner: prompt → AgentPlan (new)
+        executor.rs             # Executor: plan → tool dispatch (new)
+        permissions.rs          # Allowlist + session cache
+        audit.rs                # SQLite audit logging (5 tables)
         tools/
-          mod.rs             # Registry + schema validation
+          mod.rs                # Registry + JSON schema validation
           fs.rs
           cmd.rs
           net.rs
@@ -109,7 +145,7 @@ apps/
 services/
   playwright-sidecar/
     src/
-      index.ts               # WebSocket JSON-RPC server
+      index.ts                  # WebSocket JSON-RPC server (scaffold)
     package.json
     tsconfig.json
 docs/
@@ -117,6 +153,7 @@ docs/
   permissions.md
   tools.md
   audit.md
+PROGRESS.md                     # Detailed completion status
 config.example.toml
 ```
 
@@ -128,15 +165,17 @@ config.example.toml
 - [Permissions](docs/permissions.md)
 - [Tools](docs/tools.md)
 - [Audit Logging](docs/audit.md)
+- [Progress / Roadmap](PROGRESS.md)
 
 ---
 
 ## Security
 
 - **No secrets in source**: use `config.toml` (gitignored) and environment variables.
+- **API key zeroized**: `ApiKey` wrapper clears memory on drop (`zeroize` crate).
 - **Tool allowlists**: tools are gated by allowlist before the approval dialog.
 - **Structured commands**: `cmd.run` uses program+args, never shell expansion.
-- **Audit trail**: every tool call is logged with approval status.
+- **Audit trail**: every tool call and LLM call is logged with approval status.
 
 ---
 
