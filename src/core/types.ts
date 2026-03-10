@@ -152,3 +152,78 @@ export interface SceneSummary {
   serviceNames: string[];
   toolCount: number;
 }
+
+// ── Plugin Marketplace ───────────────────────────────────────────────────────
+
+/**
+ * Describes a downloadable MCP service plugin as published in the registry.
+ *
+ * In production each plugin would be fetched from an HTTPS endpoint that
+ * returns this JSON manifest.  For local development, manifests are seeded
+ * directly in the PluginManager registry.
+ */
+export interface PluginManifest {
+  /** Unique, URL-safe plugin identifier (e.g. "weather-service"). */
+  id: string;
+  /** Human-readable display name. */
+  name: string;
+  /** Semantic version string, e.g. "1.2.0". */
+  version: string;
+  /** Author or organisation name. */
+  author: string;
+  /** Short description shown in the marketplace listing. */
+  description: string;
+  /** Optional link to documentation or the plugin repository. */
+  homepage?: string;
+  /** Category tag for UI grouping (e.g. "Productivity", "Developer Tools"). */
+  category: string;
+  /**
+   * URL where the plugin manifest was originally published.
+   * Used as a stable identifier and for future re-fetching / update checks.
+   */
+  registryUrl: string;
+  /**
+   * Tool definitions the plugin provides once installed.
+   * These are wired directly into McpServiceListManager so the LLM can use them.
+   */
+  tools: ToolDefinition[];
+  /**
+   * Optional HTTP endpoint the runtime should POST tool-call requests to.
+   * When absent, the plugin service falls back to a mock/stub implementation.
+   */
+  executeEndpoint?: string;
+}
+
+/** Installation state of a plugin. */
+export type PluginStatus = "available" | "installing" | "installed" | "error";
+
+/**
+ * A registry entry that tracks a plugin's manifest and its current status
+ * in the local installation.
+ */
+export interface PluginEntry {
+  manifest: PluginManifest;
+  status: PluginStatus;
+  /** ISO 8601 timestamp of when the plugin was installed, if applicable. */
+  installedAt?: string;
+  /** Human-readable error message, set when status === "error". */
+  error?: string;
+}
+
+/**
+ * Response shape for plugin list endpoints.
+ */
+export interface PluginSummary {
+  id: string;
+  name: string;
+  version: string;
+  author: string;
+  description: string;
+  category: string;
+  homepage?: string;
+  /** Subset of tool definitions (name + description) for display purposes. */
+  tools: Array<{ name: string; description: string }>;
+  toolCount: number;
+  status: PluginStatus;
+  installedAt?: string;
+}

@@ -18,11 +18,17 @@
  *   DELETE /api/agents/:id                — remove an agent
  *   POST /api/dispatch-as/:agentId        — dispatch a tool call as a specific agent
  *
+ *   GET  /api/plugins                     — list all plugins in the registry (with install status)
+ *   GET  /api/plugins/installed           — list installed plugins only
+ *   POST /api/plugins/install             — install a plugin  { pluginId }
+ *   DELETE /api/plugins/:pluginId         — uninstall a plugin
+ *
  * Run:  npm run server
  */
 
 import express, { Request, Response } from "express";
 import { McpServiceListManager } from "./core/McpServiceListManager";
+import { PluginManager } from "./core/PluginManager";
 import { SearchService } from "./services/SearchService";
 import { CalendarService } from "./services/CalendarService";
 import { CodeRunnerService } from "./services/CodeRunnerService";
@@ -89,6 +95,9 @@ manager.registerAgent({
 
 const app = express();
 app.use(express.json());
+
+// Initialise PluginManager after manager is set up
+const pluginManager = new PluginManager(manager);
 
 // ── REST API ─────────────────────────────────────────────────────────────────
 
@@ -209,6 +218,39 @@ app.post("/api/dispatch-as/:agentId", async (req: Request, res: Response) => {
     const call: ToolCall = { toolName, arguments: args ?? {} };
     const result = await manager.dispatchAs(agentId, call);
     res.json({ ok: true, agentId, result });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+// ── Plugins API ───────────────────────────────────────────────────────────────
+
+app.get("/api/plugins", (_req: Request, res: Response) => {
+  res.json(pluginManager.listAll());
+});
+
+app.get("/api/plugins/installed", (_req: Request, res: Response) => {
+  res.json(pluginManager.listInstalled());
+});
+
+app.post("/api/plugins/install", (req: Request, res: Response) => {
+  const { pluginId } = req.body as { pluginId?: string };
+  if (!pluginId) {
+    res.status(400).json({ ok: false, error: "pluginId is required" });
+    return;
+  }
+  try {
+    const summary = pluginManager.install(pluginId);
+    res.json({ ok: true, plugin: summary });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+app.delete("/api/plugins/:pluginId", (req: Request, res: Response) => {
+  try {
+    pluginManager.uninstall(String(req.params.pluginId));
+    res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
@@ -556,6 +598,26 @@ const HTML = /* html */ `<!DOCTYPE html>
     }
     .group-card-footer { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; display: flex; gap: 8px; align-items: center; }
 
+    /* ── Plugin cards ── */
+    .plugin-card { position: relative; }
+    .plugin-card.installed { border-color: rgba(22,163,74,0.45); }
+    .plugin-badge-installed {
+      font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      padding: 2px 7px; border-radius: 100px;
+      background: rgba(22,163,74,0.15); color: var(--green); border: 1px solid rgba(22,163,74,0.3);
+    }
+    .plugin-category {
+      font-size: 0.68rem; padding: 2px 7px; border-radius: 100px;
+      background: var(--tag-bg); color: var(--accent); border: 1px solid rgba(79,70,229,0.2);
+    }
+    .plugin-meta { font-size: 0.72rem; color: var(--text-dim); display: flex; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+    .plugin-tools-list { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .plugin-tool-chip {
+      font-size: 0.68rem; padding: 2px 6px; border-radius: 4px;
+      background: var(--bg); border: 1px solid var(--border); color: var(--text-dim);
+      font-family: 'Courier New', monospace;
+    }
+
     /* ── Create form (collapsible) ── */
     .create-form {
       background: var(--card);
@@ -582,7 +644,7 @@ const HTML = /* html */ `<!DOCTYPE html>
   <div class="logo">🤖</div>
   <div>
     <h1>MCP Services Manager</h1>
-    <div class="subtitle">Manage and monitor LLM tool services — with Scenes &amp; Agents</div>
+    <div class="subtitle">Manage and monitor LLM tool services — with Scenes, Agents &amp; Plugin Marketplace</div>
   </div>
   <div class="status-dot" title="Server running"></div>
 </header>
@@ -596,6 +658,8 @@ const HTML = /* html */ `<!DOCTYPE html>
     <div class="stat-card"><div class="stat-value purple" id="stat-tools">—</div><div class="stat-label">Active Tools</div></div>
     <div class="stat-card"><div class="stat-value purple" id="stat-scenes">—</div><div class="stat-label">Scenes</div></div>
     <div class="stat-card"><div class="stat-value purple" id="stat-agents">—</div><div class="stat-label">Agents</div></div>
+    <div class="stat-card"><div class="stat-value green"  id="stat-plugins-installed">—</div><div class="stat-label">Plugins Installed</div></div>
+    <div class="stat-card"><div class="stat-value purple" id="stat-plugins-total">—</div><div class="stat-label">In Marketplace</div></div>
   </div>
 
   <!-- Tab bar -->
@@ -603,6 +667,7 @@ const HTML = /* html */ `<!DOCTYPE html>
     <button class="tab-btn active" data-tab="services" onclick="switchTab('services', this)">⚙️ Services</button>
     <button class="tab-btn"        data-tab="scenes"   onclick="switchTab('scenes',   this)">🗂 Scenes</button>
     <button class="tab-btn"        data-tab="agents"   onclick="switchTab('agents',   this)">🤖 Agents</button>
+    <button class="tab-btn"        data-tab="plugins"  onclick="switchTab('plugins',  this)">🔌 Plugins</button>
     <button class="tab-btn"        data-tab="dispatch" onclick="switchTab('dispatch', this)">▶ Tool Call</button>
   </nav>
 
@@ -676,6 +741,27 @@ const HTML = /* html */ `<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- ── TAB: Plugins ── -->
+  <div class="tab-pane" id="tab-plugins">
+    <div class="flex-gap mb-8">
+      <div class="section-title" style="margin:0">🔌 Plugin Marketplace</div>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <select id="plugin-filter" onchange="renderPluginGrid()" style="font-size:0.78rem;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+          <option value="all">All plugins</option>
+          <option value="available">Available</option>
+          <option value="installed">Installed</option>
+        </select>
+        <select id="plugin-category-filter" onchange="renderPluginGrid()" style="font-size:0.78rem;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text)">
+          <option value="">All categories</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadAll()">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="group-grid" id="plugins-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+      <div style="color:var(--text-dim)">Loading plugins…</div>
+    </div>
+  </div>
+
   <!-- ── TAB: Dispatch ── -->
   <div class="tab-pane" id="tab-dispatch">
     <div class="section-title">Try a Tool Call</div>
@@ -743,23 +829,27 @@ const HTML = /* html */ `<!DOCTYPE html>
   }
 
   // ── Load everything ───────────────────────────────────────────────────────
-  let allServices = [], allScenes = [], allAgents = [];
+  let allServices = [], allScenes = [], allAgents = [], allPlugins = [];
 
   async function loadAll() {
     try {
-      const [svcs, tools, scenes, agents] = await Promise.all([
+      const [svcs, tools, scenes, agents, plugins] = await Promise.all([
         fetch('/api/services').then(r => r.json()),
         fetch('/api/tools').then(r => r.json()),
         fetch('/api/scenes').then(r => r.json()),
         fetch('/api/agents').then(r => r.json()),
+        fetch('/api/plugins').then(r => r.json()),
       ]);
       allServices = svcs;
       allScenes   = scenes;
       allAgents   = agents;
-      renderStats(svcs, tools, scenes, agents);
+      allPlugins  = plugins;
+      renderStats(svcs, tools, scenes, agents, plugins);
       renderServices(svcs);
       renderScenes(scenes);
       renderAgents(agents);
+      renderPluginGrid();
+      populateCategoryFilter(plugins);
       populateToolSelect(tools);
       populateAgentSelect(agents);
     } catch (e) {
@@ -767,7 +857,7 @@ const HTML = /* html */ `<!DOCTYPE html>
     }
   }
 
-  function renderStats(svcs, tools, scenes, agents) {
+  function renderStats(svcs, tools, scenes, agents, plugins) {
     const enabled = svcs.filter(s => s.enabled).length;
     document.getElementById('stat-total').textContent    = svcs.length;
     document.getElementById('stat-enabled').textContent  = enabled;
@@ -775,6 +865,8 @@ const HTML = /* html */ `<!DOCTYPE html>
     document.getElementById('stat-tools').textContent    = tools.length;
     document.getElementById('stat-scenes').textContent   = scenes.length;
     document.getElementById('stat-agents').textContent   = agents.length;
+    document.getElementById('stat-plugins-installed').textContent = plugins.filter(p => p.status === 'installed').length;
+    document.getElementById('stat-plugins-total').textContent = plugins.length;
   }
 
   // ── Services tab ──────────────────────────────────────────────────────────
@@ -967,7 +1059,94 @@ const HTML = /* html */ `<!DOCTYPE html>
     else toast('Error: ' + data.error, false);
   }
 
-  // ── Dispatch tab ──────────────────────────────────────────────────────────
+  // ── Plugins tab ───────────────────────────────────────────────────────────
+  const CATEGORY_ICONS = {
+    'Data & Analytics':     '📊',
+    'Developer Tools':      '🛠',
+    'Productivity':         '📋',
+    'Document Processing':  '📄',
+    'Communication':        '💬',
+    'default':              '🔌',
+  };
+  function categoryIcon(cat) { return CATEGORY_ICONS[cat] || CATEGORY_ICONS['default']; }
+
+  function populateCategoryFilter(plugins) {
+    const cats = [...new Set(plugins.map(p => p.category))].sort();
+    const sel = document.getElementById('plugin-category-filter');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">All categories</option>'
+      + cats.map(c => '<option value="' + c + '">' + c + '</option>').join('');
+    if (prev) sel.value = prev;
+  }
+
+  function renderPluginGrid() {
+    const statusFilter   = document.getElementById('plugin-filter').value;
+    const categoryFilter = document.getElementById('plugin-category-filter').value;
+    let plugins = allPlugins;
+    if (statusFilter === 'installed') plugins = plugins.filter(p => p.status === 'installed');
+    else if (statusFilter === 'available') plugins = plugins.filter(p => p.status !== 'installed');
+    if (categoryFilter) plugins = plugins.filter(p => p.category === categoryFilter);
+    const grid = document.getElementById('plugins-grid');
+    if (!plugins.length) {
+      grid.innerHTML = '<div style="color:var(--text-dim);grid-column:1/-1">No plugins match the filter.</div>';
+      return;
+    }
+    grid.innerHTML = plugins.map(p => pluginCardHTML(p)).join('');
+  }
+
+  function pluginCardHTML(p) {
+    const isInstalled = p.status === 'installed';
+    const toolWord = p.toolCount === 1 ? 'tool' : 'tools';
+    const installBtn = isInstalled
+      ? \`<button class="btn btn-danger btn-sm" onclick="uninstallPlugin('\${p.id}')">⏏ Uninstall</button>\`
+      : \`<button class="btn btn-success btn-sm" id="install-btn-\${p.id}" onclick="installPlugin('\${p.id}')">⬇ Install</button>\`;
+    const homepageLink = p.homepage
+      ? \`<a href="\${p.homepage}" target="_blank" rel="noopener" style="font-size:0.72rem;color:var(--accent);text-decoration:none">🔗 Docs</a>\`
+      : '';
+    const toolChipsHtml = p.tools
+      ? p.tools.slice(0, 4).map(t => \`<span class="plugin-tool-chip">\${t.name}</span>\`).join('')
+        + (p.tools.length > 4 ? \`<span class="plugin-tool-chip" style="color:var(--text-dim)">+\${p.tools.length - 4} more</span>\` : '')
+      : \`<span style="font-size:0.72rem;color:var(--text-dim)">\${p.toolCount} \${toolWord}</span>\`;
+    return \`<div class="group-card plugin-card \${isInstalled ? 'installed' : ''}" id="plugin-card-\${p.id}">
+      <div class="group-card-title">
+        \${categoryIcon(p.category)} \${p.name}
+        \${isInstalled ? '<span class="plugin-badge-installed">✓ Installed</span>' : ''}
+      </div>
+      <div class="group-card-desc">\${p.description}</div>
+      <div class="plugin-meta">
+        <span>\${p.author}</span>
+        <span>v\${p.version}</span>
+        <span class="plugin-category">\${p.category}</span>
+      </div>
+      <div class="plugin-tools-list">\${toolChipsHtml}</div>
+      <div class="group-card-footer">
+        <span class="group-card-meta">\${p.toolCount} \${toolWord}</span>
+        \${homepageLink}
+        <div style="margin-left:auto;display:flex;gap:6px">\${installBtn}</div>
+      </div>
+    </div>\`;
+  }
+
+  async function installPlugin(pluginId) {
+    const btn = document.getElementById('install-btn-' + pluginId);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Installing…'; }
+    const res = await fetch('/api/plugins/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pluginId }),
+    });
+    const data = await res.json();
+    if (data.ok) { toast('Plugin "' + data.plugin.name + '" installed ✓'); await loadAll(); }
+    else { toast('Install failed: ' + data.error, false); if (btn) { btn.disabled = false; btn.innerHTML = '⬇ Install'; } }
+  }
+
+  async function uninstallPlugin(pluginId) {
+    const plugin = allPlugins.find(p => p.id === pluginId);
+    if (!confirm('Uninstall plugin "' + (plugin ? plugin.name : pluginId) + '"?')) return;
+    const res = await fetch('/api/plugins/' + pluginId, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) { toast('Plugin uninstalled'); await loadAll(); }
+    else toast('Error: ' + data.error, false);
+  }
   function switchToDispatchAs(agentId) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));

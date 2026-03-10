@@ -38,6 +38,16 @@ export class McpServiceListManager {
   }
 
   /**
+   * Removes a registered service from the manager entirely.
+   * Its tools will no longer be available to the LLM.
+   * No-op if the service is not registered.
+   * @param name - The name of the service to remove.
+   */
+  unregister(name: string): void {
+    this.services.delete(name);
+  }
+
+  /**
    * Enables a registered service by name, making its tools available to the LLM.
    * @param name - The name of the service to enable.
    * @throws Error if no service with the given name is registered.
