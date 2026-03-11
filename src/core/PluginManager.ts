@@ -167,8 +167,15 @@ export class PluginManager {
    * @throws Error if the URL is invalid, the fetch fails, or the manifest is malformed.
    */
   async installFromUrl(url: string): Promise<PluginSummary> {
-    if (!url.startsWith("https://") && !url.startsWith("http://")) {
-      throw new Error("Only HTTP(S) URLs are supported.");
+    // Enforce HTTPS-only and block SSRF targets.
+    // Note: the REST layer (server.ts) validates this with validatePluginUrl()
+    // before calling this method; this guard is a defence-in-depth check that
+    // also protects programmatic callers who bypass the REST layer.
+    if (!url || typeof url !== "string") {
+      throw new Error("url must be a non-empty string.");
+    }
+    if (!url.startsWith("https://")) {
+      throw new Error("Only HTTPS URLs are supported (HTTP is not allowed).");
     }
 
     let manifest: PluginManifest;

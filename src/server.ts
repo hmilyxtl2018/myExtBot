@@ -25,8 +25,17 @@
  *   GET  /api/plugins                     — list all plugins in the registry (with install status)
  *   GET  /api/plugins/installed           — list installed plugins only
  *   POST /api/plugins/install             — install a plugin  { pluginId }
- *   POST /api/plugins/install-from-url    — install a plugin from a manifest URL  { url }
+ *   POST /api/plugins/install-from-url    — install a plugin from an HTTPS manifest URL  { url }
  *   DELETE /api/plugins/:pluginId         — uninstall a plugin
+ *
+ *   GET  /api/security/audit-log          — security audit log of all mutating operations
+ *
+ * Security configuration (environment variables):
+ *   API_KEY        — Bearer/X-API-Key value for /api/* auth (unset = disabled)
+ *   CORS_ORIGIN    — Exact allowed cross-origin (unset = same-origin only)
+ *   RATE_LIMIT_MAX — Max read req/min/IP (default 120)
+ *   WRITE_RATE_MAX — Max write req/min/IP (default 30)
+ *   TRUST_PROXY    — Set "true" to read IP from X-Forwarded-For
  *
  * Run:  npm run server
  */
@@ -38,6 +47,26 @@ import { SearchService } from "./services/SearchService";
 import { CalendarService } from "./services/CalendarService";
 import { CodeRunnerService } from "./services/CodeRunnerService";
 import { AgentProfile, Scene, ToolCall } from "./core/types";
+import {
+  securityHeaders,
+  corsPolicy,
+  rateLimiter,
+  writeRateLimiter,
+  requireApiKey,
+  printSecurityStatus,
+} from "./security/middleware";
+import {
+  validateId,
+  validateName,
+  validateDescription,
+  validateStringArray,
+  validateShortText,
+  validatePluginUrl,
+  validateAgentFields,
+  formatValidationErrors,
+  MAX,
+} from "./security/validation";
+import { recordAudit, getAuditLog } from "./security/auditLog";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -152,7 +181,22 @@ manager.registerAgent({
 });
 
 const app = express();
-app.use(express.json());
+
+// ── Global security middleware ────────────────────────────────────────────────
+// Order matters: headers and CORS first, then rate-limiting, then body parsing.
+
+app.use(securityHeaders);
+app.use(corsPolicy);
+
+// Restrict request body to 256 KB to prevent oversized payload attacks.
+app.use(express.json({ limit: "256kb" }));
+
+// Rate limiting for all API routes.
+app.use("/api", rateLimiter);
+app.use("/api", writeRateLimiter);
+
+// Optional API key authentication for all API routes.
+app.use("/api", requireApiKey);
 
 // Initialise PluginManager after manager is set up
 const pluginManager = new PluginManager(manager);
@@ -194,11 +238,18 @@ app.post("/api/dispatch", async (req: Request, res: Response) => {
     res.status(400).json({ ok: false, error: "toolName is required" });
     return;
   }
+  // Validate toolName is a reasonable identifier
+  if (typeof toolName !== "string" || toolName.length > 128) {
+    res.status(400).json({ ok: false, error: "toolName must be a string up to 128 characters" });
+    return;
+  }
   try {
     const call: ToolCall = { toolName, arguments: args ?? {} };
     const result = await manager.dispatch(call);
+    recordAudit(req, 200, `tool=${toolName}`);
     res.json({ ok: true, result });
   } catch (e) {
+    recordAudit(req, 400, `tool=${toolName} error=${(e as Error).message}`);
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
 });
@@ -211,20 +262,47 @@ app.get("/api/scenes", (_req: Request, res: Response) => {
 
 app.post("/api/scenes", (req: Request, res: Response) => {
   const { id, name, description, serviceNames } = req.body as Partial<Scene>;
-  if (!id || !name || !Array.isArray(serviceNames)) {
-    res.status(400).json({ ok: false, error: "id, name and serviceNames are required" });
+
+  // Validate required fields
+  const idErr = validateId(id);
+  if (idErr) {
+    res.status(400).json({ ok: false, error: `id: ${idErr}` });
     return;
   }
+  const nameErr = validateName(name);
+  if (nameErr) {
+    res.status(400).json({ ok: false, error: `name: ${nameErr}` });
+    return;
+  }
+  if (!Array.isArray(serviceNames)) {
+    res.status(400).json({ ok: false, error: "serviceNames must be an array" });
+    return;
+  }
+  const svcErr = validateStringArray(serviceNames, "serviceNames", MAX.id);
+  if (svcErr) {
+    res.status(400).json({ ok: false, error: svcErr });
+    return;
+  }
+  const descErr = validateDescription(description);
+  if (descErr) {
+    res.status(400).json({ ok: false, error: `description: ${descErr}` });
+    return;
+  }
+
   try {
-    manager.registerScene({ id, name, description, serviceNames });
+    manager.registerScene({ id: id!, name: name!, description, serviceNames });
+    recordAudit(req, 200, `sceneId=${id}`);
     res.json({ ok: true, scene: manager.listScenes().find((s) => s.id === id) });
   } catch (e) {
+    recordAudit(req, 400, `sceneId=${id} error=${(e as Error).message}`);
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
 });
 
 app.delete("/api/scenes/:id", (req: Request, res: Response) => {
-  manager.removeScene(String(req.params.id));
+  const id = String(req.params.id);
+  manager.removeScene(id);
+  recordAudit(req, 200, `sceneId=${id}`);
   res.json({ ok: true });
 });
 
@@ -252,21 +330,44 @@ app.get("/api/agents/:id", (req: Request, res: Response) => {
 });
 
 app.post("/api/agents", (req: Request, res: Response) => {
-  const {
-    id, name, description, sceneId, allowedServices, canDelegateTo,
-    primarySkill, secondarySkills, capabilities, constraints,
-  } = req.body as Partial<AgentProfile>;
-  if (!id || !name) {
-    res.status(400).json({ ok: false, error: "id and name are required" });
+  const body = req.body as Partial<AgentProfile>;
+
+  // Validate id and name (required)
+  const idErr = validateId(body.id);
+  if (idErr) {
+    res.status(400).json({ ok: false, error: `id: ${idErr}` });
     return;
   }
+  const nameErr = validateName(body.name);
+  if (nameErr) {
+    res.status(400).json({ ok: false, error: `name: ${nameErr}` });
+    return;
+  }
+
+  // Validate optional fields
+  const fieldErrors = validateAgentFields(body as Record<string, unknown>);
+  if (Object.keys(fieldErrors).length > 0) {
+    res.status(400).json({ ok: false, error: formatValidationErrors(fieldErrors) });
+    return;
+  }
+
   try {
     manager.registerAgent({
-      id, name, description, sceneId, allowedServices, canDelegateTo,
-      primarySkill, secondarySkills, capabilities, constraints,
+      id: body.id!,
+      name: body.name!,
+      description: body.description,
+      sceneId: body.sceneId,
+      allowedServices: body.allowedServices,
+      canDelegateTo: body.canDelegateTo,
+      primarySkill: body.primarySkill,
+      secondarySkills: body.secondarySkills,
+      capabilities: body.capabilities,
+      constraints: body.constraints,
     });
-    res.json({ ok: true, agent: manager.listAgents().find((a) => a.id === id) });
+    recordAudit(req, 200, `agentId=${body.id}`);
+    res.json({ ok: true, agent: manager.listAgents().find((a) => a.id === body.id) });
   } catch (e) {
+    recordAudit(req, 400, `agentId=${body.id} error=${(e as Error).message}`);
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
 });
@@ -274,16 +375,28 @@ app.post("/api/agents", (req: Request, res: Response) => {
 app.patch("/api/agents/:id", (req: Request, res: Response) => {
   const id = String(req.params.id);
   const patch = req.body as Partial<Omit<AgentProfile, "id">>;
+
+  // Validate patch fields
+  const fieldErrors = validateAgentFields(patch as Record<string, unknown>);
+  if (Object.keys(fieldErrors).length > 0) {
+    res.status(400).json({ ok: false, error: formatValidationErrors(fieldErrors) });
+    return;
+  }
+
   try {
     manager.updateAgent(id, patch);
+    recordAudit(req, 200, `agentId=${id}`);
     res.json({ ok: true, agent: manager.listAgents().find((a) => a.id === id) });
   } catch (e) {
+    recordAudit(req, 404, `agentId=${id} error=${(e as Error).message}`);
     res.status(404).json({ ok: false, error: (e as Error).message });
   }
 });
 
 app.delete("/api/agents/:id", (req: Request, res: Response) => {
-  manager.removeAgent(String(req.params.id));
+  const id = String(req.params.id);
+  manager.removeAgent(id);
+  recordAudit(req, 200, `agentId=${id}`);
   res.json({ ok: true });
 });
 
@@ -293,15 +406,17 @@ app.post("/api/dispatch-as/:agentId", async (req: Request, res: Response) => {
     toolName?: string;
     arguments?: Record<string, unknown>;
   };
-  if (!toolName) {
-    res.status(400).json({ ok: false, error: "toolName is required" });
+  if (!toolName || typeof toolName !== "string" || toolName.length > 128) {
+    res.status(400).json({ ok: false, error: "toolName must be a non-empty string up to 128 characters" });
     return;
   }
   try {
     const call: ToolCall = { toolName, arguments: args ?? {} };
     const result = await manager.dispatchAs(agentId, call);
+    recordAudit(req, 200, `agentId=${agentId} tool=${toolName}`);
     res.json({ ok: true, agentId, result });
   } catch (e) {
+    recordAudit(req, 400, `agentId=${agentId} tool=${toolName} error=${(e as Error).message}`);
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
 });
@@ -317,11 +432,17 @@ app.post("/api/agents/:fromAgentId/delegate", async (req: Request, res: Response
     res.status(400).json({ ok: false, error: "toAgentId and toolName are required" });
     return;
   }
+  if (typeof toolName !== "string" || toolName.length > 128) {
+    res.status(400).json({ ok: false, error: "toolName must be a string up to 128 characters" });
+    return;
+  }
   try {
     const call: ToolCall = { toolName, arguments: args ?? {} };
     const result = await manager.delegateAs(fromAgentId, toAgentId, call);
+    recordAudit(req, 200, `from=${fromAgentId} to=${toAgentId} tool=${toolName}`);
     res.json({ ok: true, fromAgentId, toAgentId, result });
   } catch (e) {
+    recordAudit(req, 400, `from=${fromAgentId} to=${toAgentId} error=${(e as Error).message}`);
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
 });
@@ -342,39 +463,62 @@ app.get("/api/plugins/installed", (_req: Request, res: Response) => {
 
 app.post("/api/plugins/install", (req: Request, res: Response) => {
   const { pluginId } = req.body as { pluginId?: string };
-  if (!pluginId) {
-    res.status(400).json({ ok: false, error: "pluginId is required" });
+  const idErr = validateId(pluginId);
+  if (idErr) {
+    res.status(400).json({ ok: false, error: `pluginId: ${idErr}` });
     return;
   }
   try {
-    const summary = pluginManager.install(pluginId);
+    const summary = pluginManager.install(pluginId!);
+    recordAudit(req, 200, `pluginId=${pluginId}`);
     res.json({ ok: true, plugin: summary });
   } catch (e) {
+    recordAudit(req, 400, `pluginId=${pluginId} error=${(e as Error).message}`);
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
 });
 
 app.post("/api/plugins/install-from-url", async (req: Request, res: Response) => {
   const { url } = req.body as { url?: string };
-  if (!url) {
-    res.status(400).json({ ok: false, error: "url is required" });
+
+  // SSRF + URL validation before any network call.
+  const urlErr = validatePluginUrl(url);
+  if (urlErr) {
+    res.status(400).json({ ok: false, error: `url: ${urlErr}` });
     return;
   }
+
   try {
-    const summary = await pluginManager.installFromUrl(url);
+    const summary = await pluginManager.installFromUrl(url!);
+    recordAudit(req, 200, `url=${url}`);
     res.json({ ok: true, plugin: summary });
   } catch (e) {
+    recordAudit(req, 400, `url=${url} error=${(e as Error).message}`);
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
 });
 
 app.delete("/api/plugins/:pluginId", (req: Request, res: Response) => {
+  const pluginId = String(req.params.pluginId);
   try {
-    pluginManager.uninstall(String(req.params.pluginId));
+    pluginManager.uninstall(pluginId);
+    recordAudit(req, 200, `pluginId=${pluginId}`);
     res.json({ ok: true });
   } catch (e) {
+    recordAudit(req, 400, `pluginId=${pluginId} error=${(e as Error).message}`);
     res.status(400).json({ ok: false, error: (e as Error).message });
   }
+});
+
+// ── Security API ──────────────────────────────────────────────────────────────
+
+/**
+ * Returns the security audit log.
+ * Lists all mutating operations (POST, PATCH, DELETE) in reverse-chronological
+ * order so operators can review what changes were made and by whom.
+ */
+app.get("/api/security/audit-log", (_req: Request, res: Response) => {
+  res.json(getAuditLog());
 });
 
 // ── Management UI ─────────────────────────────────────────────────────────────
@@ -389,6 +533,7 @@ app.get("/", (_req: Request, res: Response) => {
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 app.listen(PORT, () => {
   console.log(`MCP Services Manager UI → http://localhost:${PORT}`);
+  printSecurityStatus();
 });
 
 // ── Embedded Management Page ──────────────────────────────────────────────────
@@ -767,6 +912,13 @@ const HTML = /* html */ `<!DOCTYPE html>
     <h1>MCP Services Manager</h1>
     <div class="subtitle">Manage and monitor LLM tool services — with Scenes, Agents &amp; Plugin Marketplace</div>
   </div>
+  <!-- API Key entry (shown when auth is required) -->
+  <div id="api-key-row" style="display:flex;align-items:center;gap:8px;margin-left:auto">
+    <span id="key-indicator" title="Auth status" style="font-size:1.1rem;cursor:default">🔓</span>
+    <input id="api-key-input" type="password" placeholder="API Key (optional)"
+      style="font-size:0.78rem;padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);width:180px"
+      onchange="setApiKey(this.value)" onblur="setApiKey(this.value)" />
+  </div>
   <div class="status-dot" title="Server running"></div>
 </header>
 
@@ -790,6 +942,7 @@ const HTML = /* html */ `<!DOCTYPE html>
     <button class="tab-btn"        data-tab="agents"   onclick="switchTab('agents',   this)">🤖 Agents</button>
     <button class="tab-btn"        data-tab="plugins"  onclick="switchTab('plugins',  this)">🔌 Plugins</button>
     <button class="tab-btn"        data-tab="dispatch" onclick="switchTab('dispatch', this)">▶ Tool Call</button>
+    <button class="tab-btn"        data-tab="security" onclick="switchTab('security', this); loadSecurityPanel()">🔒 Security</button>
   </nav>
 
   <!-- ── TAB: Services ── -->
@@ -997,6 +1150,77 @@ const HTML = /* html */ `<!DOCTYPE html>
       <div id="dispatch-result" class="dispatch-result"></div>
     </div>
   </div>
+
+  <!-- ── TAB: Security ── -->
+  <div class="tab-pane" id="tab-security">
+    <div class="section-title">🔒 Security Overview &amp; Audit Log</div>
+
+    <!-- Security config cards -->
+    <div class="stats-bar" id="sec-config-bar" style="margin-bottom:16px">
+      <div class="stat-card"><div class="stat-value" id="sec-auth-status" style="font-size:1.3rem">—</div><div class="stat-label">Auth</div></div>
+      <div class="stat-card"><div class="stat-value" id="sec-cors-status"  style="font-size:1.3rem">—</div><div class="stat-label">CORS</div></div>
+      <div class="stat-card"><div class="stat-value" id="sec-rate-status"  style="font-size:1.3rem">—</div><div class="stat-label">Rate Limit</div></div>
+      <div class="stat-card"><div class="stat-value" id="sec-headers-status" style="font-size:1.3rem">—</div><div class="stat-label">Headers</div></div>
+      <div class="stat-card"><div class="stat-value purple" id="sec-audit-count">—</div><div class="stat-label">Audit Entries</div></div>
+    </div>
+
+    <!-- Threat model information -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px">
+      <div class="group-card" style="border-left:3px solid var(--success,#22c55e)">
+        <div class="group-card-title" style="color:var(--success,#22c55e)">✅ Implemented Controls</div>
+        <ul style="margin:8px 0 0 16px;padding:0;font-size:0.8rem;line-height:1.8">
+          <li>Content-Security-Policy (XSS mitigation)</li>
+          <li>X-Frame-Options: DENY (clickjacking)</li>
+          <li>X-Content-Type-Options: nosniff</li>
+          <li>Referrer-Policy + Permissions-Policy</li>
+          <li>Per-IP rate limiting (read + write)</li>
+          <li>Optional Bearer / X-API-Key auth</li>
+          <li>SSRF prevention on plugin URLs</li>
+          <li>Input validation (slugs, lengths, arrays)</li>
+          <li>Request body size limit (256 KB)</li>
+          <li>HTML output escaping (XSS)</li>
+          <li>Audit log for all mutating ops</li>
+          <li>X-Powered-By header removed</li>
+        </ul>
+      </div>
+      <div class="group-card" style="border-left:3px solid var(--warning,#f59e0b)">
+        <div class="group-card-title" style="color:var(--warning,#f59e0b)">⚠️ Recommendations (Production)</div>
+        <ul style="margin:8px 0 0 16px;padding:0;font-size:0.8rem;line-height:1.8">
+          <li>Enable API_KEY env var for authentication</li>
+          <li>Terminate TLS at a reverse proxy (nginx)</li>
+          <li>Persist audit log to a database</li>
+          <li>Add CORS_ORIGIN if serving cross-origin</li>
+          <li>Run behind firewall — not directly exposed</li>
+          <li>Rotate API key periodically</li>
+          <li>Add structured logging (Winston / Pino)</li>
+        </ul>
+      </div>
+      <div class="group-card" style="border-left:3px solid var(--accent,#6366f1)">
+        <div class="group-card-title">🔑 API Key Configuration</div>
+        <div style="font-size:0.8rem;margin-top:6px;line-height:1.8">
+          <p style="margin:0 0 8px">Enter your API key below to authenticate UI requests (stored in sessionStorage for this tab only):</p>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="sec-key-input" type="password" placeholder="Paste API key here…"
+              style="flex:1;font-size:0.78rem;padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text)"
+              onchange="applySecurityTabKey(this.value)" />
+            <button class="btn btn-primary btn-sm" onclick="applySecurityTabKey(document.getElementById('sec-key-input').value)">Apply</button>
+          </div>
+          <p style="margin:8px 0 0;color:var(--text-dim);font-size:0.75rem">
+            Start server with <code>API_KEY=your-secret npm run server</code> to enable server-side auth.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit log -->
+    <div class="flex-gap mb-8" style="margin-top:16px">
+      <div class="section-title" style="margin:0">📋 Mutation Audit Log</div>
+      <button class="btn btn-ghost btn-sm ml-auto" onclick="loadAuditLog()">↻ Refresh</button>
+    </div>
+    <div id="audit-log-container">
+      <div style="color:var(--text-dim);font-size:0.8rem">Click ↻ Refresh to load the audit log.</div>
+    </div>
+  </div>
 </main>
 
 <div class="toast" id="toast"></div>
@@ -1029,6 +1253,57 @@ const HTML = /* html */ `<!DOCTYPE html>
     btn.classList.add('active');
   }
 
+  // ── API Key management ────────────────────────────────────────────────────
+  // The management UI sends the API key (if configured) with every request.
+  // The key is stored in sessionStorage so it does not persist across tabs/sessions.
+  let _apiKey = sessionStorage.getItem('mcp_api_key') || '';
+
+  function setApiKey(key) {
+    _apiKey = key.trim();
+    if (_apiKey) { sessionStorage.setItem('mcp_api_key', _apiKey); }
+    else { sessionStorage.removeItem('mcp_api_key'); }
+    syncApiKeyInputs(_apiKey);
+    updateKeyUI();
+    loadAll();
+  }
+
+  /** Keeps both the header input and the Security-tab input in sync. */
+  function syncApiKeyInputs(value) {
+    const headerInput = document.getElementById('api-key-input');
+    const secInput    = document.getElementById('sec-key-input');
+    if (headerInput) headerInput.value = value;
+    if (secInput)    secInput.value    = value;
+  }
+
+  /** Called from the Security tab "Apply" button and its input's onchange. */
+  function applySecurityTabKey(value) {
+    setApiKey(value);
+  }
+
+  function updateKeyUI() {
+    const indicator = document.getElementById('key-indicator');
+    if (indicator) indicator.textContent = _apiKey ? '🔐' : '🔓';
+  }
+
+  /**
+   * Drop-in replacement for fetch() that automatically injects
+   * the API key header when one is configured.
+   * On 401, shows the key row (via CSS class) and throws.
+   */
+  async function apiFetch(url, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (_apiKey) headers['X-API-Key'] = _apiKey;
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+      toast('🔐 Unauthorized — please enter a valid API key.', false);
+      // Reveal the key input by removing the 'hidden' class if present.
+      const keyRow = document.getElementById('api-key-row');
+      if (keyRow) keyRow.classList.remove('hidden');
+      throw new Error('Unauthorized');
+    }
+    return res;
+  }
+
   // ── Toast helper ──────────────────────────────────────────────────────────
   let toastTimer;
   function toast(msg, ok = true) {
@@ -1045,11 +1320,11 @@ const HTML = /* html */ `<!DOCTYPE html>
   async function loadAll() {
     try {
       const [svcs, tools, scenes, agents, plugins] = await Promise.all([
-        fetch('/api/services').then(r => r.json()),
-        fetch('/api/tools').then(r => r.json()),
-        fetch('/api/scenes').then(r => r.json()),
-        fetch('/api/agents').then(r => r.json()),
-        fetch('/api/plugins').then(r => r.json()),
+        apiFetch('/api/services').then(r => r.json()),
+        apiFetch('/api/tools').then(r => r.json()),
+        apiFetch('/api/scenes').then(r => r.json()),
+        apiFetch('/api/agents').then(r => r.json()),
+        apiFetch('/api/plugins').then(r => r.json()),
       ]);
       allServices = svcs;
       allScenes   = scenes;
@@ -1128,7 +1403,7 @@ const HTML = /* html */ `<!DOCTYPE html>
         panel.innerHTML = '<div style="color:var(--text-dim);font-size:0.78rem;padding:4px 0">Enable this service to inspect its tools.</div>';
         panel.dataset.loaded = '1'; return;
       }
-      const tools = await fetch('/api/tools').then(r => r.json());
+      const tools = await apiFetch('/api/tools').then(r => r.json());
       panel.innerHTML = tools.length ? tools.map(t => toolItemHTML(t)).join('') : '<div style="color:var(--text-dim);font-size:0.78rem">No active tools.</div>';
       panel.dataset.loaded = '1';
     } catch (e) {
@@ -1154,7 +1429,7 @@ const HTML = /* html */ `<!DOCTYPE html>
     const card = document.getElementById('card-' + name);
     card.querySelectorAll('.btn').forEach(b => b.disabled = true);
     try {
-      const res = await fetch('/api/services/' + name + '/' + action, { method: 'POST' });
+      const res = await apiFetch('/api/services/' + name + '/' + action, { method: 'POST' });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
       toast(name + (enable ? ' enabled ✓' : ' disabled'), enable);
@@ -1193,7 +1468,7 @@ const HTML = /* html */ `<!DOCTYPE html>
 
   async function deleteScene(id) {
     if (!confirm('Remove scene "' + id + '"?')) return;
-    const res = await fetch('/api/scenes/' + id, { method: 'DELETE' });
+    const res = await apiFetch('/api/scenes/' + id, { method: 'DELETE' });
     const data = await res.json();
     if (data.ok) { toast('Scene removed'); await loadAll(); }
     else toast('Error: ' + data.error, false);
@@ -1205,7 +1480,7 @@ const HTML = /* html */ `<!DOCTYPE html>
     const desc = document.getElementById('new-scene-desc').value.trim();
     const svcs = document.getElementById('new-scene-svcs').value.split(',').map(s => s.trim()).filter(Boolean);
     if (!id || !name || !svcs.length) { toast('ID, Name and at least one Service are required', false); return; }
-    const res = await fetch('/api/scenes', {
+    const res = await apiFetch('/api/scenes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, name, description: desc || undefined, serviceNames: svcs }),
     });
@@ -1338,7 +1613,7 @@ const HTML = /* html */ `<!DOCTYPE html>
         patch[field] = val || undefined;
       }
     });
-    const res = await fetch('/api/agents/' + agentId, {
+    const res = await apiFetch('/api/agents/' + agentId, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     });
@@ -1349,7 +1624,7 @@ const HTML = /* html */ `<!DOCTYPE html>
 
   async function deleteAgent(id) {
     if (!confirm('Remove agent "' + id + '"?')) return;
-    const res = await fetch('/api/agents/' + id, { method: 'DELETE' });
+    const res = await apiFetch('/api/agents/' + id, { method: 'DELETE' });
     const data = await res.json();
     if (data.ok) { toast('Agent removed'); await loadAll(); }
     else toast('Error: ' + data.error, false);
@@ -1378,7 +1653,7 @@ const HTML = /* html */ `<!DOCTYPE html>
       capabilities: capabilities.length ? capabilities : undefined,
       constraints: constraints.length ? constraints : undefined,
     };
-    const res = await fetch('/api/agents', {
+    const res = await apiFetch('/api/agents', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
@@ -1426,7 +1701,7 @@ const HTML = /* html */ `<!DOCTYPE html>
     const toolSel = document.getElementById('delegate-tool');
     if (!toId) { toolSel.innerHTML = '<option value="">— choose to-agent first —</option>'; return; }
     try {
-      const tools = await fetch('/api/agents/' + toId + '/tools').then(r => r.json());
+      const tools = await apiFetch('/api/agents/' + toId + '/tools').then(r => r.json());
       toolSel.innerHTML = '<option value="">— choose tool —</option>'
         + tools.map(t => '<option value="' + t.name + '">' + t.name + ' — ' + t.description + '</option>').join('');
     } catch { toolSel.innerHTML = '<option value="">Failed to load tools</option>'; }
@@ -1445,7 +1720,7 @@ const HTML = /* html */ `<!DOCTYPE html>
     }
     const btn = document.querySelector('#delegate-try-form .btn-primary');
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending...';
-    const res = await fetch('/api/agents/' + fromId + '/delegate', {
+    const res = await apiFetch('/api/agents/' + fromId + '/delegate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ toAgentId: toId, toolName: tool, arguments: args }),
     });
@@ -1464,7 +1739,7 @@ const HTML = /* html */ `<!DOCTYPE html>
   async function refreshDelegationLog() {
     const container = document.getElementById('delegation-log-container');
     try {
-      const log = await fetch('/api/delegation-log').then(r => r.json());
+      const log = await apiFetch('/api/delegation-log').then(r => r.json());
       if (!log.length) {
         container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem">No delegations recorded yet.</div>';
         return;
@@ -1492,6 +1767,54 @@ const HTML = /* html */ `<!DOCTYPE html>
         }).join('')
         + '</div>';
     } catch { container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem">Failed to load delegation log.</div>'; }
+  }
+
+  // ── Security panel ────────────────────────────────────────────────────────
+  async function loadSecurityPanel() {
+    // Update security status cards
+    document.getElementById('sec-auth-status').textContent = _apiKey ? '🔐 ON' : '🔓 OFF';
+    document.getElementById('sec-auth-status').style.color = _apiKey ? 'var(--success,#22c55e)' : 'var(--warning,#f59e0b)';
+    document.getElementById('sec-cors-status').textContent  = '🌐';
+    document.getElementById('sec-rate-status').textContent  = '✅';
+    document.getElementById('sec-headers-status').textContent = '✅';
+    // Populate the secondary key input from current key
+    const secInput = document.getElementById('sec-key-input');
+    if (secInput && !secInput.value) secInput.value = _apiKey;
+    await loadAuditLog();
+  }
+
+  async function loadAuditLog() {
+    const container = document.getElementById('audit-log-container');
+    if (!container) return;
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem">Loading…</div>';
+    try {
+      const entries = await apiFetch('/api/security/audit-log').then(r => r.json());
+      document.getElementById('sec-audit-count').textContent = entries.length;
+      if (!entries.length) {
+        container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem">No audit entries yet — mutating operations will appear here.</div>';
+        return;
+      }
+      container.innerHTML = '<div style="display:flex;flex-direction:column;gap:5px">'
+        + entries.map(e => {
+          const ts = new Date(e.timestamp).toLocaleString();
+          const statusOk    = e.status < 300;
+          const statusWarn  = e.status === 401;
+          const statusColor = statusOk ? 'var(--success,#22c55e)' : statusWarn ? 'var(--warning,#f59e0b)' : 'var(--danger,#ef4444)';
+          const statusLabel = statusOk ? '✓ ' + e.status : statusWarn ? '⚠ ' + e.status : '✗ ' + e.status;
+          const methodColor = ['POST','PATCH','PUT'].includes(e.method) ? 'var(--accent,#6366f1)' : e.method === 'DELETE' ? 'var(--danger,#ef4444)' : 'var(--text-dim)';
+          return \`<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid \${statusColor};border-radius:6px;padding:7px 12px;font-size:0.78rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap" role="row" aria-label="\${esc(e.method)} \${esc(e.path)} status \${e.status}">
+            <span style="color:var(--text-dim);white-space:nowrap">\${esc(ts)}</span>
+            <span style="font-family:monospace;font-weight:700;color:\${methodColor};min-width:50px">\${esc(e.method)}</span>
+            <span style="font-family:monospace;color:var(--text);flex:1;min-width:200px">\${esc(e.path)}</span>
+            <span style="font-family:monospace;background:var(--bg);padding:1px 7px;border-radius:4px;color:\${statusColor};font-weight:600">\${esc(statusLabel)}</span>
+            <span style="color:var(--text-dim);font-size:0.73rem">\${esc(e.ip)}</span>
+            \${e.detail ? \`<span style="color:var(--text-dim);font-size:0.73rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${esc(e.detail)}</span>\` : ''}
+          </div>\`;
+        }).join('')
+        + '</div>';
+    } catch (err) {
+      container.innerHTML = \`<div style="color:var(--text-dim);font-size:0.8rem">Failed to load audit log\${err.message ? ': ' + esc(err.message) : ''}.</div>\`;
+    }
   }
 
   // ── Plugins tab ───────────────────────────────────────────────────────────
@@ -1571,7 +1894,7 @@ const HTML = /* html */ `<!DOCTYPE html>
   async function installPlugin(pluginId) {
     const btn = document.getElementById('install-btn-' + pluginId);
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Installing…'; }
-    const res = await fetch('/api/plugins/install', {
+    const res = await apiFetch('/api/plugins/install', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pluginId }),
     });
@@ -1583,7 +1906,7 @@ const HTML = /* html */ `<!DOCTYPE html>
   async function uninstallPlugin(pluginId) {
     const plugin = allPlugins.find(p => p.id === pluginId);
     if (!confirm('Uninstall plugin "' + (plugin ? plugin.name : pluginId) + '"?')) return;
-    const res = await fetch('/api/plugins/' + pluginId, { method: 'DELETE' });
+    const res = await apiFetch('/api/plugins/' + pluginId, { method: 'DELETE' });
     const data = await res.json();
     if (data.ok) { toast('Plugin uninstalled'); await loadAll(); }
     else toast('Error: ' + data.error, false);
@@ -1602,7 +1925,7 @@ const HTML = /* html */ `<!DOCTYPE html>
     if (!url) { toast('Please enter a URL', false); return; }
     const btn = document.querySelector('#url-install-form .btn-primary');
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Installing…';
-    const res = await fetch('/api/plugins/install-from-url', {
+    const res = await apiFetch('/api/plugins/install-from-url', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     });
@@ -1639,10 +1962,10 @@ const HTML = /* html */ `<!DOCTYPE html>
     const agentId = document.getElementById('dispatch-agent').value;
     let tools;
     if (agentId) {
-      tools = await fetch('/api/agents/' + agentId + '/tools').then(r => r.json());
-      if (!Array.isArray(tools)) tools = await fetch('/api/tools').then(r => r.json());
+      tools = await apiFetch('/api/agents/' + agentId + '/tools').then(r => r.json());
+      if (!Array.isArray(tools)) tools = await apiFetch('/api/tools').then(r => r.json());
     } else {
-      tools = await fetch('/api/tools').then(r => r.json());
+      tools = await apiFetch('/api/tools').then(r => r.json());
     }
     populateToolSelect(tools);
   }
@@ -1658,7 +1981,7 @@ const HTML = /* html */ `<!DOCTYPE html>
   function onToolSelect() {
     const toolName = document.getElementById('tool-select').value;
     if (!toolName) return;
-    fetch('/api/tools').then(r => r.json()).then(ts => {
+    apiFetch('/api/tools').then(r => r.json()).then(ts => {
       const t = ts.find(x => x.name === toolName);
       if (!t) return;
       const example = {};
@@ -1716,6 +2039,8 @@ const HTML = /* html */ `<!DOCTYPE html>
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
+  syncApiKeyInputs(_apiKey);
+  updateKeyUI();
   loadAll();
 </script>
 </body>
