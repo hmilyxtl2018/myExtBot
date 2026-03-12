@@ -81,6 +81,19 @@ manager.registerAgent({
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
+/**
+ * Extract and validate the required `query` string from request query params.
+ * Returns the query string on success, or sends a 400 response and returns null.
+ */
+function extractQuery(req: Request, res: Response): string | null {
+  const q = req.query.query;
+  if (typeof q !== "string" || q.trim() === "") {
+    res.status(400).json({ error: "Missing required query parameter: query" });
+    return null;
+  }
+  return q;
+}
+
 /** GET /api/agents — list all agents with M6 persona/intent fields */
 app.get("/api/agents", (_req: Request, res: Response) => {
   res.json(manager.listAgents());
@@ -94,15 +107,10 @@ app.get("/api/agents", (_req: Request, res: Response) => {
  * Returns AgentRouteSuggestion[]
  */
 app.get("/api/agents/route", (req: Request, res: Response) => {
-  const query = req.query["query"];
-  if (typeof query !== "string" || query.trim() === "") {
-    res
-      .status(400)
-      .json({ error: "Missing required query parameter: query" });
-    return;
-  }
+  const query = extractQuery(req, res);
+  if (query === null) return;
 
-  const topNRaw = req.query["topN"];
+  const topNRaw = req.query.topN;
   const topN =
     typeof topNRaw === "string" && /^\d+$/.test(topNRaw)
       ? parseInt(topNRaw, 10)
@@ -118,13 +126,8 @@ app.get("/api/agents/route", (req: Request, res: Response) => {
  * Returns { agentId: string | null, suggestion: AgentRouteSuggestion | null }
  */
 app.get("/api/agents/route/best", (req: Request, res: Response) => {
-  const query = req.query["query"];
-  if (typeof query !== "string" || query.trim() === "") {
-    res
-      .status(400)
-      .json({ error: "Missing required query parameter: query" });
-    return;
-  }
+  const query = extractQuery(req, res);
+  if (query === null) return;
 
   const suggestions = manager.routeAgent(query, 1);
   const top = suggestions[0] ?? null;

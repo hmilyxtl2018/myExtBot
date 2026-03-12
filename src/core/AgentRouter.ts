@@ -45,7 +45,7 @@ export class AgentRouter {
    * @returns Suggestions sorted by score descending.
    */
   route(query: string, topN = 3): AgentRouteSuggestion[] {
-    const tokens = this.tokenise(query);
+    const tokens = this.tokenize(query);
     const agents = this.manager.listAgents();
 
     const scored: (AgentRouteSuggestion & { toolCount: number })[] = agents
@@ -57,7 +57,7 @@ export class AgentRouter {
 
         // a. intents (+3 each)
         for (const intent of agent.intents ?? []) {
-          if (tokens.some((t) => intent.toLowerCase().includes(t) || t.includes(intent.toLowerCase()))) {
+          if (tokens.some((t) => this.tokenMatchesTag(t, intent))) {
             matchedIntents.push(intent);
             score += 3;
           }
@@ -65,7 +65,7 @@ export class AgentRouter {
 
         // b. domains (+2 each)
         for (const domain of agent.domains ?? []) {
-          if (tokens.some((t) => domain.toLowerCase().includes(t) || t.includes(domain.toLowerCase()))) {
+          if (tokens.some((t) => this.tokenMatchesTag(t, domain))) {
             matchedDomains.push(domain);
             score += 2;
           }
@@ -74,23 +74,23 @@ export class AgentRouter {
         // c. primarySkill (+2)
         if (agent.primarySkill) {
           const skill = agent.primarySkill.toLowerCase();
-          if (tokens.some((t) => skill.includes(t))) {
+          if (tokens.some((t) => skill.split(/[\s\-]+/).includes(t))) {
             score += 2;
           }
         }
 
         // d. capabilities (+1 each)
         for (const cap of agent.capabilities ?? []) {
-          const capLower = cap.toLowerCase();
-          if (tokens.some((t) => capLower.includes(t))) {
+          const capWords = cap.toLowerCase().split(/[\s\-]+/);
+          if (tokens.some((t) => capWords.includes(t))) {
             score += 1;
           }
         }
 
         // e. name / description (+1)
-        const nameLower = agent.name.toLowerCase();
-        const descLower = (agent.description ?? "").toLowerCase();
-        if (tokens.some((t) => nameLower.includes(t) || descLower.includes(t))) {
+        const nameWords = agent.name.toLowerCase().split(/[\s\-]+/);
+        const descWords = (agent.description ?? "").toLowerCase().split(/[\s\-]+/);
+        if (tokens.some((t) => nameWords.includes(t) || descWords.includes(t))) {
           score += 1;
         }
 
@@ -134,11 +134,38 @@ export class AgentRouter {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   /**
+   * Check whether a query token matches a tag (intent or domain).
+   *
+   * Matching rules (in order):
+   *  1. Exact equality        — token === tag
+   *  2. Hyphen-segment        — token equals any hyphen-delimited segment
+   *                             (e.g. "search" matches "web-search")
+   *  3. CJK substring         — when either token or tag contains CJK characters,
+   *                             use bidirectional substring containment to handle
+   *                             Chinese/Japanese/Korean text without word boundaries
+   *                             (e.g. "查询" matches tag "查询" and token "查询天气")
+   *
+   * Bidirectional substring matching is NOT used for purely-ASCII tags because it
+   * causes false positives (e.g. "search" would otherwise match domain "research").
+   */
+  private tokenMatchesTag(token: string, tag: string): boolean {
+    const tagLower = tag.toLowerCase();
+    if (token === tagLower) return true;
+    // Hyphen-segment exact match
+    if (tagLower.split("-").includes(token)) return true;
+    // CJK fallback: use substring matching when non-ASCII characters are present
+    if (/\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}/u.test(token + tagLower)) {
+      return tagLower.includes(token) || token.includes(tagLower);
+    }
+    return false;
+  }
+
+  /**
    * Split a query into lower-case tokens (split on whitespace and punctuation).
    * Tokens shorter than 2 characters are dropped to avoid false positives
-   * (e.g. the article "a" would otherwise match "web-seArch").
+   * (e.g. the article "a" would otherwise match "web-search").
    */
-  private tokenise(query: string): string[] {
+  private tokenize(query: string): string[] {
     return query
       .toLowerCase()
       .split(/[\s\p{P}]+/u)
