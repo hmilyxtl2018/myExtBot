@@ -20,7 +20,9 @@
  *   DELETE /api/agents/:id                — remove an agent
  *   POST /api/dispatch-as/:agentId        — dispatch a tool call as a specific agent
  *   POST /api/agents/:fromAgentId/delegate — delegate a tool call to another agent  { toAgentId, toolName, arguments }
- *   GET  /api/delegation-log              — retrieve the inter-agent delegation history
+ *   GET  /api/delegation-log              — query the inter-agent delegation history (supports agentId/toolName/date/success/limit/offset)
+ *   GET  /api/delegation-log/dates        — list all dates with recorded log files (descending)
+ *   GET  /api/delegation-log/summary      — aggregated statistics for a given date
  *
  *   GET  /api/plugins                     — list all plugins in the registry (with install status)
  *   GET  /api/plugins/installed           — list installed plugins only
@@ -43,6 +45,7 @@
 import express, { Request, Response } from "express";
 import { McpServiceListManager } from "./core/McpServiceListManager";
 import { PluginManager } from "./core/PluginManager";
+import { DelegationLogReader } from "./core/DelegationLogReader";
 import { SearchService } from "./services/SearchService";
 import { CalendarService } from "./services/CalendarService";
 import { CodeRunnerService } from "./services/CodeRunnerService";
@@ -447,8 +450,54 @@ app.post("/api/agents/:fromAgentId/delegate", async (req: Request, res: Response
   }
 });
 
-app.get("/api/delegation-log", (_req: Request, res: Response) => {
-  res.json(manager.getDelegationLog());
+app.get("/api/delegation-log", async (req: Request, res: Response) => {
+  const { agentId, toolName, date, success, limit, offset } = req.query as Record<string, string | undefined>;
+  const reader = new DelegationLogReader();
+  const entries = await reader.query({
+    agentId,
+    toolName,
+    date,
+    success: success === undefined ? undefined : success === "true",
+    limit: limit !== undefined ? parseInt(limit, 10) : 100,
+    offset: offset !== undefined ? parseInt(offset, 10) : 0,
+  });
+  const resolvedDate = date ?? new Date().toISOString().slice(0, 10);
+  res.json({ entries, total: entries.length, date: resolvedDate });
+});
+
+app.get("/api/delegation-log/dates", async (_req: Request, res: Response) => {
+  const reader = new DelegationLogReader();
+  const dates = await reader.listAvailableDates();
+  res.json({ dates });
+});
+
+app.get("/api/delegation-log/summary", async (req: Request, res: Response) => {
+  const { date } = req.query as { date?: string };
+  const reader = new DelegationLogReader();
+  const entries = await reader.query({ date, limit: 10000, offset: 0 });
+
+  const byAgent: Record<string, { calls: number; success: number }> = {};
+  const byTool: Record<string, { calls: number; success: number }> = {};
+
+  for (const e of entries) {
+    for (const id of [e.fromAgentId, e.toAgentId]) {
+      if (!byAgent[id]) byAgent[id] = { calls: 0, success: 0 };
+      byAgent[id].calls++;
+      if (e.success) byAgent[id].success++;
+    }
+    if (!byTool[e.toolName]) byTool[e.toolName] = { calls: 0, success: 0 };
+    byTool[e.toolName].calls++;
+    if (e.success) byTool[e.toolName].success++;
+  }
+
+  const totalCalls = entries.length;
+  const successCount = entries.filter((e) => e.success).length;
+  res.json({
+    totalCalls,
+    successRate: totalCalls === 0 ? 0 : successCount / totalCalls,
+    byAgent,
+    byTool,
+  });
 });
 
 // ── Plugins API ───────────────────────────────────────────────────────────────

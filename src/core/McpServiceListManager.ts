@@ -9,6 +9,7 @@ import {
   ToolDefinition,
   ToolResult,
 } from "./types";
+import { DelegationLogWriter } from "./DelegationLogWriter";
 
 /**
  * McpServiceListManager is the single source of truth for all MCP services and
@@ -32,6 +33,9 @@ export class McpServiceListManager {
   /** Circular buffer of the last {@link DELEGATION_LOG_MAX} delegation records. */
   private delegationLog: DelegationLogEntry[] = [];
   private static readonly DELEGATION_LOG_MAX = 50;
+
+  /** Persists delegation log entries to disk. */
+  private logWriter = new DelegationLogWriter();
 
   // ── Service management ────────────────────────────────────────────────────
 
@@ -353,7 +357,7 @@ export class McpServiceListManager {
     }
 
     // Record in the delegation log.
-    this.appendDelegationLog({
+    const entry: DelegationLogEntry = {
       timestamp: new Date().toISOString(),
       fromAgentId,
       toAgentId,
@@ -362,7 +366,10 @@ export class McpServiceListManager {
       success: result.success,
       output: result.output,
       error: result.error,
-    });
+    };
+    this.appendDelegationLog(entry);
+    // Persist to disk asynchronously; failure must not affect the return value.
+    void this.logWriter.append(entry);
 
     // Re-throw on failure so the caller gets a proper error response.
     if (!result.success) {
