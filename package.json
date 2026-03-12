@@ -1,0 +1,32 @@
+{
+  "name": "myextbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "server": "ts-node src/server.ts",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hmilyxtl2018/myExtBot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/hmilyxtl2018/myExtBot/issues"
+  },
+  "homepage": "https://github.com/hmilyxtl2018/myExtBot#readme",
+  "dependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.4.0",
+    "express": "^5.2.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
