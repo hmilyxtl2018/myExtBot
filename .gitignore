@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts.map
+.env
+.env.local
+.env.*.local
+
+# Runtime data - do not commit user installation state
+data/installed-plugins.json
+
+# Build artifacts
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
