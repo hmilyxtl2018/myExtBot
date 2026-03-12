@@ -2,6 +2,8 @@ import { McpServiceListManager } from "./core/McpServiceListManager";
 import { SearchService } from "./services/SearchService";
 import { CalendarService } from "./services/CalendarService";
 import { CodeRunnerService } from "./services/CodeRunnerService";
+import { PerplexityService } from "./services/PerplexityService";
+import { FirecrawlService } from "./services/FirecrawlService";
 
 async function main() {
   // ── 1. Bootstrap the manager and register all services ──────────────────────
@@ -9,6 +11,8 @@ async function main() {
   manager.register(new SearchService());
   manager.register(new CalendarService());
   manager.register(new CodeRunnerService());
+  manager.register(new PerplexityService());
+  manager.register(new FirecrawlService());
 
   // ── 2. Inspect registered services ──────────────────────────────────────────
   console.log("=== Registered Services ===");
@@ -49,7 +53,13 @@ async function main() {
     id: "full",
     name: "Full Access",
     description: "All services available — for power users.",
-    serviceNames: ["SearchService", "CalendarService", "CodeRunnerService"],
+    serviceNames: ["SearchService", "CalendarService", "CodeRunnerService", "PerplexityService", "FirecrawlService"],
+  });
+  manager.registerScene({
+    id: "web-intelligence",
+    name: "Web Intelligence",
+    description: "实时网页搜索与内容抓取，适合需要获取最新信息的任务。",
+    serviceNames: ["PerplexityService", "FirecrawlService"],
   });
 
   console.log("\n=== Scenes ===");
@@ -89,6 +99,25 @@ async function main() {
     name: "Full Agent",
     description: "Unrestricted access to all registered services.",
     sceneId: "full",
+  });
+
+  // Web Intelligence Agent — scoped to the 'web-intelligence' scene
+  manager.registerAgent({
+    id: "web-intel-agent",
+    name: "Web Intelligence Agent",
+    description:
+      "专门负责网络信息获取：实时搜索（Perplexity）和网页内容抓取（Firecrawl）。",
+    sceneId: "web-intelligence",
+    primarySkill: "Web research & content extraction",
+    capabilities: [
+      "Search the web with real-time results and citations",
+      "Scrape any webpage and extract clean Markdown content",
+      "Monitor websites for content changes",
+    ],
+    constraints: [
+      "Cannot access internal databases",
+      "Cannot scrape pages requiring authentication",
+    ],
   });
 
   console.log("\n=== Agents ===");
@@ -152,6 +181,26 @@ async function main() {
     arguments: { language: "python", code: "print(42)" },
   });
   console.log("dev-bot → run_code:", JSON.stringify(devResult, null, 2));
+
+  // ── 9. New web intelligence tool demos ──────────────────────────────────────
+  console.log("\n=== Web Intelligence demos ===");
+
+  // intelligence_search — graceful error when API key is not configured
+  const searchDemo = await manager.dispatch({
+    toolName: "intelligence_search",
+    arguments: { query: "latest AI agent frameworks 2025", focus: "web" },
+  });
+  console.log(
+    "intelligence_search result:",
+    JSON.stringify(searchDemo, null, 2)
+  );
+
+  // web_scrape — scrape example.com as a demo
+  const scrapeDemo = await manager.dispatch({
+    toolName: "web_scrape",
+    arguments: { url: "https://example.com", format: "markdown" },
+  });
+  console.log("web_scrape result:", JSON.stringify(scrapeDemo, null, 2));
 }
 
 main().catch(console.error);
