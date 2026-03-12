@@ -1,0 +1,22 @@
+{
+  "name": "myextbot",
+  "version": "1.0.0",
+  "description": "myExtBot — 数字分身资产体系",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "server": "ts-node src/server.ts",
+    "server:dev": "nodemon --exec ts-node src/server.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
