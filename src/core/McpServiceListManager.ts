@@ -1,6 +1,9 @@
 import {
   AgentProfile,
   AgentSummary,
+  AgentLifecycleRecord,
+  AgentLifecycleHistoryEntry,
+  AgentStatus,
   DelegationLogEntry,
   McpService,
   Scene,
@@ -10,6 +13,7 @@ import {
   ToolResult,
 } from "./types";
 import { DelegationLogWriter } from "./DelegationLogWriter";
+import { AgentLifecycleManager } from "./AgentLifecycleManager";
 
 /**
  * McpServiceListManager is the single source of truth for all MCP services and
@@ -36,6 +40,9 @@ export class McpServiceListManager {
 
   /** Persists delegation log entries to disk. */
   private logWriter = new DelegationLogWriter();
+
+  /** Manages agent lifecycle state machine. */
+  private lifecycleManager = new AgentLifecycleManager();
 
   // ── Service management ────────────────────────────────────────────────────
 
@@ -198,6 +205,7 @@ export class McpServiceListManager {
    */
   registerAgent(agent: AgentProfile): void {
     this.agents.set(agent.id, { ...agent });
+    this.lifecycleManager.init(agent.id);
   }
 
   /**
@@ -259,22 +267,36 @@ export class McpServiceListManager {
     const agent = this.agents.get(agentId);
     if (!agent) throw new Error(`Agent "${agentId}" is not registered.`);
 
+    // Lifecycle guard
+    if (!this.lifecycleManager.isCallable(agentId)) {
+      const lifecycle = this.lifecycleManager.getRecord(agentId);
+      throw new Error(
+        `Agent "${agentId}" is not callable: current status is "${lifecycle.status}".` +
+          (lifecycle.reason ? ` Reason: ${lifecycle.reason}` : "")
+      );
+    }
+    this.lifecycleManager.markBusy(agentId);
+
     const allowedServiceNames = this.resolveAgentServiceNames(agent);
 
-    for (const service of this.services.values()) {
-      if (!service.enabled) continue;
-      if (allowedServiceNames && !allowedServiceNames.includes(service.name)) continue;
-      const owns = service
-        .getToolDefinitions()
-        .some((t) => t.name === toolCall.toolName);
-      if (owns) {
-        return service.execute(toolCall);
+    try {
+      for (const service of this.services.values()) {
+        if (!service.enabled) continue;
+        if (allowedServiceNames && !allowedServiceNames.includes(service.name)) continue;
+        const owns = service
+          .getToolDefinitions()
+          .some((t) => t.name === toolCall.toolName);
+        if (owns) {
+          return await service.execute(toolCall);
+        }
       }
+      throw new Error(
+        `Agent "${agentId}" is not permitted to call tool "${toolCall.toolName}", ` +
+          `or no enabled service handles it.`
+      );
+    } finally {
+      this.lifecycleManager.markTaskComplete(agentId);
     }
-    throw new Error(
-      `Agent "${agentId}" is not permitted to call tool "${toolCall.toolName}", ` +
-        `or no enabled service handles it.`
-    );
   }
 
   /**
@@ -392,5 +414,27 @@ export class McpServiceListManager {
     if (this.delegationLog.length > McpServiceListManager.DELEGATION_LOG_MAX) {
       this.delegationLog.shift();
     }
+  }
+
+  // ─── Lifecycle management (M10) ──────────────────────────────────────────────
+
+  getAgentStatus(agentId: string): AgentLifecycleRecord {
+    return this.lifecycleManager.getRecord(agentId);
+  }
+
+  getAllAgentStatuses(): AgentLifecycleRecord[] {
+    return this.lifecycleManager.getAllRecords();
+  }
+
+  transitionAgentStatus(agentId: string, newStatus: AgentStatus, reason?: string): void {
+    this.lifecycleManager.transition(agentId, newStatus, reason, "manual");
+  }
+
+  getAgentLifecycleHistory(agentId: string, limit?: number): AgentLifecycleHistoryEntry[] {
+    return this.lifecycleManager.getHistory(agentId, limit);
+  }
+
+  getAllAgentLifecycleHistory(limit?: number): AgentLifecycleHistoryEntry[] {
+    return this.lifecycleManager.getAllHistory(limit);
   }
 }

@@ -32,6 +32,12 @@
  *
  *   GET  /api/security/audit-log          — security audit log of all mutating operations
  *
+ *   GET  /api/agents/statuses             — all agents' current lifecycle records
+ *   GET  /api/agents/:id/status           — single agent lifecycle record
+ *   PATCH /api/agents/:id/status          — manually transition agent status
+ *   GET  /api/agents/:id/lifecycle        — agent lifecycle history (?limit=N)
+ *   GET  /api/agents/lifecycle/all        — all agents' lifecycle history
+ *
  * Security configuration (environment variables):
  *   API_KEY        — Bearer/X-API-Key value for /api/* auth (unset = disabled)
  *   CORS_ORIGIN    — Exact allowed cross-origin (unset = same-origin only)
@@ -70,6 +76,7 @@ import {
   MAX,
 } from "./security/validation";
 import { recordAudit, getAuditLog } from "./security/auditLog";
+import { createLifecycleRoutes } from "./api/lifecycleRoutes";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -200,6 +207,9 @@ app.use("/api", writeRateLimiter);
 
 // Optional API key authentication for all API routes.
 app.use("/api", requireApiKey);
+
+// M10: Lifecycle routes
+app.use("/api", createLifecycleRoutes(manager));
 
 // Initialise PluginManager after manager is set up
 const pluginManager = new PluginManager(manager);

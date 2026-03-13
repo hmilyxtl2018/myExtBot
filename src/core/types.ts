@@ -300,3 +300,30 @@ export interface PluginSummary {
   status: PluginStatus;
   installedAt?: string;
 }
+
+// ─── Agent Lifecycle Types (M10) ─────────────────────────────────────────────
+
+export type AgentStatus =
+  | "initializing"
+  | "active"
+  | "busy"
+  | "sleeping"
+  | "retired";
+
+export interface AgentLifecycleRecord {
+  agentId: string;
+  status: AgentStatus;
+  since: string;
+  reason?: string;
+  resumeAt?: string;
+  taskCount: number;
+}
+
+export interface AgentLifecycleHistoryEntry {
+  agentId: string;
+  fromStatus: AgentStatus;
+  toStatus: AgentStatus;
+  timestamp: string;
+  reason?: string;
+  triggeredBy?: "manual" | "health-monitor" | "sla-enforcer" | "system";
+}
