@@ -156,3 +156,40 @@ console.log(manager.listServices());
 | `ToolResult` | Execution result returned to the LLM |
 | `McpService` | Contract every service must implement |
 
+---
+
+## External Service Integrations
+
+### Perplexity AI (`intelligence_search`)
+
+Provides real-time web search with citations via the Perplexity API.
+
+**Setup:**
+```bash
+export PERPLEXITY_API_KEY=your_perplexity_api_key
+# Optional:
+export PERPLEXITY_MODEL=sonar          # or sonar-pro for higher quality
+export PERPLEXITY_BASE_URL=https://api.perplexity.ai
+```
+
+**When to use:** Real-time queries, latest news, fact-checking, technical documentation lookup.
+
+---
+
+### Firecrawl (`web_scrape`)
+
+Extracts clean Markdown content from any webpage (including JS-rendered SPAs) via the Firecrawl API.
+
+**Setup:**
+```bash
+export FIRECRAWL_API_KEY=your_firecrawl_api_key
+# Optional:
+export FIRECRAWL_BASE_URL=https://api.firecrawl.dev/v1
+```
+
+**When to use:** Reading webpage content, extracting articles, building knowledge bases, monitoring websites.
+
+---
+
+Both services degrade gracefully when the API key is not set — they return a clear error message instead of throwing.
+
