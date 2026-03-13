@@ -156,3 +156,100 @@ console.log(manager.listServices());
 | `ToolResult` | Execution result returned to the LLM |
 | `McpService` | Contract every service must implement |
 
+
+---
+
+## Delegation Log
+
+Every call to `delegateAs()` (inter-agent delegation) is automatically persisted to a **JSON Lines** file on disk, in addition to the in-memory circular buffer.
+
+### File location
+
+| Priority | Source | Path |
+|----------|--------|------|
+| 1 | Environment variable | `$MYEXTBOT_LOG_DIR/delegation-YYYY-MM-DD.jsonl` |
+| 2 | Default | `~/.myextbot/logs/delegation-YYYY-MM-DD.jsonl` |
+
+Set a custom directory:
+```bash
+export MYEXTBOT_LOG_DIR=/var/log/myextbot
+npm run server
+```
+
+### Log format
+
+Each line is a complete JSON object (`DelegationLogEntry`):
+
+```json
+{"timestamp":"2024-03-12T06:00:00.000Z","fromAgentId":"dev-bot","toAgentId":"web-search-agent","toolName":"intelligence_search","arguments":{"query":"latest AI news"},"success":true,"output":{"text":"..."}}
+```
+
+### REST API
+
+#### `GET /api/delegation-log`
+
+Query delegation entries for a specific date.
+
+| Query param | Type | Description |
+|-------------|------|-------------|
+| `date` | `YYYY-MM-DD` | Date to query (defaults to today) |
+| `agentId` | `string` | Filter by `fromAgentId` or `toAgentId` |
+| `toolName` | `string` | Filter by tool name |
+| `success` | `"true"` \| `"false"` | Filter by outcome |
+| `limit` | `number` | Max results (default: 100) |
+| `offset` | `number` | Skip N results (default: 0) |
+
+**Response:**
+```json
+{
+  "entries": [ /* DelegationLogEntry[] */ ],
+  "total": 3,
+  "date": "2024-03-12"
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:3000/api/delegation-log?agentId=dev-bot&success=true"
+```
+
+---
+
+#### `GET /api/delegation-log/dates`
+
+Returns all dates for which a log file exists, in descending order.
+
+```bash
+curl http://localhost:3000/api/delegation-log/dates
+# { "dates": ["2024-03-12", "2024-03-11", "2024-03-10"] }
+```
+
+---
+
+#### `GET /api/delegation-log/summary`
+
+Aggregated statistics for a given date (defaults to today).
+
+| Query param | Type | Description |
+|-------------|------|-------------|
+| `date` | `YYYY-MM-DD` | Date to summarise (defaults to today) |
+
+**Response:**
+```json
+{
+  "totalCalls": 42,
+  "successRate": 0.95,
+  "byAgent": {
+    "dev-bot": { "calls": 20, "success": 19 },
+    "web-search-agent": { "calls": 22, "success": 21 }
+  },
+  "byTool": {
+    "intelligence_search": { "calls": 15, "success": 15 },
+    "web_scrape": { "calls": 7, "success": 6 }
+  }
+}
+```
+
+```bash
+curl "http://localhost:3000/api/delegation-log/summary?date=2024-03-12"
+```
