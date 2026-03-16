@@ -38,6 +38,10 @@
  *   GET  /api/agents/:id/lifecycle        — agent lifecycle history (?limit=N)
  *   GET  /api/agents/lifecycle/all        — all agents' lifecycle history
  *
+ *   GET  /api/health                       — list all service health records
+ *   GET  /api/health/:serviceName          — single service health record
+ *   POST /api/health/:serviceName/reset    — manually reset service health to "healthy"
+ *
  * Security configuration (environment variables):
  *   API_KEY        — Bearer/X-API-Key value for /api/* auth (unset = disabled)
  *   CORS_ORIGIN    — Exact allowed cross-origin (unset = same-origin only)
@@ -77,6 +81,7 @@ import {
 } from "./security/validation";
 import { recordAudit, getAuditLog } from "./security/auditLog";
 import { createLifecycleRoutes } from "./api/lifecycleRoutes";
+import { createHealthRoutes } from "./api/healthRoutes";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -210,6 +215,9 @@ app.use("/api", requireApiKey);
 
 // M10: Lifecycle routes
 app.use("/api", createLifecycleRoutes(manager));
+
+// M4: Health monitoring routes
+app.use("/api", createHealthRoutes(manager));
 
 // Initialise PluginManager after manager is set up
 const pluginManager = new PluginManager(manager);
