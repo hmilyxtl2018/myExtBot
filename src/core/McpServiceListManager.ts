@@ -8,6 +8,7 @@ import {
   McpService,
   Scene,
   SceneSummary,
+  ServiceHealthRecord,
   ToolCall,
   ToolDefinition,
   ToolResult,
@@ -16,6 +17,7 @@ import {
 } from "./types";
 import { DelegationLogWriter } from "./DelegationLogWriter";
 import { AgentLifecycleManager } from "./AgentLifecycleManager";
+import { HealthMonitor } from "./HealthMonitor";
 import { PipelineRegistry } from "./PipelineRegistry";
 import { PipelineRunner } from "./PipelineRunner";
 
@@ -48,6 +50,8 @@ export class McpServiceListManager {
   /** Manages agent lifecycle state machine. */
   private lifecycleManager = new AgentLifecycleManager();
 
+  /** Monitors real-time health of registered services. */
+  private healthMonitor = new HealthMonitor();
   private pipelineRegistry = new PipelineRegistry();
   private pipelineRunner = new PipelineRunner(this);
 
@@ -60,6 +64,7 @@ export class McpServiceListManager {
    */
   register(service: McpService): void {
     this.services.set(service.name, service);
+    this.healthMonitor.init(service.name);
   }
 
   /**
@@ -128,7 +133,31 @@ export class McpServiceListManager {
         .getToolDefinitions()
         .some((t) => t.name === toolCall.toolName);
       if (owns) {
-        return service.execute(toolCall);
+        this.healthMonitor.checkRateLimitRecovery(service.name);
+        if (!this.healthMonitor.isCallable(service.name)) {
+          const fallbackName = (service as { fallbackServiceName?: string }).fallbackServiceName;
+          const fallbackService = fallbackName ? this.services.get(fallbackName) : undefined;
+          if (fallbackService && fallbackService.enabled) {
+            const result = await fallbackService.execute(toolCall);
+            if (result.success) {
+              this.healthMonitor.recordSuccess(fallbackService.name);
+            } else {
+              this.healthMonitor.recordFailure(fallbackService.name, result.error ?? "unknown error");
+            }
+            return result;
+          }
+          return {
+            success: false,
+            error: `Service "${service.name}" is currently not callable (health: ${this.healthMonitor.getRecord(service.name).health}).`,
+          };
+        }
+        const result = await service.execute(toolCall);
+        if (result.success) {
+          this.healthMonitor.recordSuccess(service.name);
+        } else {
+          this.healthMonitor.recordFailure(service.name, result.error ?? "unknown error");
+        }
+        return result;
       }
     }
     throw new Error(
@@ -294,7 +323,32 @@ export class McpServiceListManager {
           .getToolDefinitions()
           .some((t) => t.name === toolCall.toolName);
         if (owns) {
-          return await service.execute(toolCall);
+          this.healthMonitor.checkRateLimitRecovery(service.name);
+          if (!this.healthMonitor.isCallable(service.name)) {
+            const fallbackName = (service as { fallbackServiceName?: string }).fallbackServiceName;
+            const fallbackService = fallbackName ? this.services.get(fallbackName) : undefined;
+            if (fallbackService && fallbackService.enabled &&
+                (!allowedServiceNames || allowedServiceNames.includes(fallbackService.name))) {
+              const result = await fallbackService.execute(toolCall);
+              if (result.success) {
+                this.healthMonitor.recordSuccess(fallbackService.name);
+              } else {
+                this.healthMonitor.recordFailure(fallbackService.name, result.error ?? "unknown error");
+              }
+              return result;
+            }
+            return {
+              success: false,
+              error: `Service "${service.name}" is currently not callable (health: ${this.healthMonitor.getRecord(service.name).health}).`,
+            };
+          }
+          const result = await service.execute(toolCall);
+          if (result.success) {
+            this.healthMonitor.recordSuccess(service.name);
+          } else {
+            this.healthMonitor.recordFailure(service.name, result.error ?? "unknown error");
+          }
+          return result;
         }
       }
       throw new Error(
@@ -445,6 +499,25 @@ export class McpServiceListManager {
     return this.lifecycleManager.getAllHistory(limit);
   }
 
+  // ─── Health monitoring (M4) ───────────────────────────────────────────────
+
+  /** Get the health record for a specific service. */
+  getServiceHealth(serviceName: string): ServiceHealthRecord {
+    return this.healthMonitor.getRecord(serviceName);
+  }
+
+  /** Get health records for all registered services. */
+  getAllServiceHealths(): ServiceHealthRecord[] {
+    return this.healthMonitor.getAllRecords();
+  }
+
+  /**
+   * Manually reset a service's health to "healthy" (ops/admin use).
+   * Returns the updated record.
+   */
+  resetServiceHealth(serviceName: string): ServiceHealthRecord {
+    this.healthMonitor.resetToHealthy(serviceName);
+    return this.healthMonitor.getRecord(serviceName);
   // ── Pipeline management ───────────────────────────────────────────────────────
 
   registerPipeline(pipeline: AgentPipeline): void {

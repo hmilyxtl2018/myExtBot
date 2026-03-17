@@ -328,6 +328,45 @@ export interface AgentLifecycleHistoryEntry {
   triggeredBy?: "manual" | "health-monitor" | "sla-enforcer" | "system";
 }
 
+// ─── Health types (M4) ───────────────────────────────────────────────────────
+
+/**
+ * Real-time health state of a Service.
+ *
+ * - "healthy"      — API is responding normally.
+ * - "degraded"     — 3–4 consecutive failures; still callable with reduced confidence.
+ * - "down"         — 5+ consecutive failures; calls are suspended.
+ * - "rate-limited" — HTTP 429 received; waiting until rateLimitResetAt.
+ * - "unknown"      — No call data yet (initial state after register()).
+ */
+export type ServiceHealth =
+  | "healthy"
+  | "degraded"
+  | "down"
+  | "rate-limited"
+  | "unknown";
+
+/**
+ * Real-time health record for a single Service.
+ */
+export interface ServiceHealthRecord {
+  serviceName: string;
+  /** Current health state */
+  health: ServiceHealth;
+  /** ISO 8601 timestamp of the last health check */
+  lastCheckedAt: string;
+  /** Number of consecutive failures */
+  consecutiveFailures: number;
+  /** Most recent error message */
+  lastError?: string;
+  /** Rate-limit recovery time (only set when health === "rate-limited") ISO 8601 */
+  rateLimitResetAt?: string;
+  /** Total number of calls */
+  totalCalls: number;
+  /** Total number of successful calls */
+  totalSuccesses: number;
+  /** Success rate (0–1) */
+  successRate: number;
 // ── M3: Multi-Agent Pipeline ──────────────────────────────────────────────────
 
 export interface PipelineStep {
