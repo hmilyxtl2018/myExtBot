@@ -28,6 +28,10 @@ const DEFAULT_RETRY_AFTER_SECONDS = 60;
 /**
  * Determines whether an error message represents a rate-limit (HTTP 429).
  */
+const DEGRADED_THRESHOLD = 3;
+const DOWN_THRESHOLD = 5;
+const DEFAULT_RETRY_AFTER_SECONDS = 60;
+
 function isRateLimitError(error: string): boolean {
   const lower = error.toLowerCase();
   return lower.includes("429") || lower.includes("rate limit");
@@ -56,6 +60,9 @@ export class HealthMonitor {
     this.init(serviceName);
     const record = this.records.get(serviceName)!;
 
+  recordSuccess(serviceName: string): void {
+    this.init(serviceName);
+    const record = this.records.get(serviceName)!;
     record.consecutiveFailures = 0;
     record.health = "healthy";
     record.lastCheckedAt = new Date().toISOString();
@@ -117,6 +124,22 @@ export class HealthMonitor {
   }
 
   /** Get the health record for a named service. */
+      record.rateLimitResetAt = new Date(Date.now() + delay * 1000).toISOString();
+    } else {
+      record.consecutiveFailures += 1;
+      const f = record.consecutiveFailures;
+      if (f >= DOWN_THRESHOLD) {
+        record.health = "down";
+      } else if (f >= DEGRADED_THRESHOLD) {
+        record.health = "degraded";
+      } else {
+        if (record.health === "unknown") {
+          record.health = "healthy";
+        }
+      }
+    }
+  }
+
   getRecord(serviceName: string): ServiceHealthRecord {
     this.init(serviceName);
     return { ...this.records.get(serviceName)! };
@@ -151,6 +174,7 @@ export class HealthMonitor {
 
     const resetAt = new Date(record.rateLimitResetAt).getTime();
     if (Date.now() >= resetAt) {
+    if (Date.now() >= new Date(record.rateLimitResetAt).getTime()) {
       record.health = "healthy";
       record.consecutiveFailures = 0;
       delete record.rateLimitResetAt;
