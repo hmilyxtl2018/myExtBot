@@ -38,6 +38,12 @@
  *   GET  /api/agents/:id/lifecycle        — agent lifecycle history (?limit=N)
  *   GET  /api/agents/lifecycle/all        — all agents' lifecycle history
  *
+ *   GET  /api/pipelines                   — list all pipelines
+ *   POST /api/pipelines                   — register a pipeline
+ *   GET  /api/pipelines/:id               — get a pipeline by ID
+ *   DELETE /api/pipelines/:id             — unregister a pipeline
+ *   POST /api/pipelines/:id/run           — execute a pipeline → PipelineRunResult
+ *
  * Security configuration (environment variables):
  *   API_KEY        — Bearer/X-API-Key value for /api/* auth (unset = disabled)
  *   CORS_ORIGIN    — Exact allowed cross-origin (unset = same-origin only)
@@ -77,6 +83,7 @@ import {
 } from "./security/validation";
 import { recordAudit, getAuditLog } from "./security/auditLog";
 import { createLifecycleRoutes } from "./api/lifecycleRoutes";
+import { createPipelineRoutes } from "./api/pipelineRoutes";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -210,6 +217,7 @@ app.use("/api", requireApiKey);
 
 // M10: Lifecycle routes
 app.use("/api", createLifecycleRoutes(manager));
+app.use("/api", createPipelineRoutes(manager));
 
 // Initialise PluginManager after manager is set up
 const pluginManager = new PluginManager(manager);
