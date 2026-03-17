@@ -20,3 +20,9 @@ npm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+.env
+.env.local
+*.d.ts.map
+.env.*
+# Runtime plugin installation state — generated at runtime, not part of source
+plugins-state.json
