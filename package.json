@@ -11,6 +11,20 @@
   "description": "myExtBot — digital avatar asset system",
   "name": "myextbot",
   "version": "1.0.0",
+  "description": "myExtBot — digital avatar asset system",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "server": "node dist/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "@types/node": "^20.12.7"
   "description": "myExtBot — digital persona asset system",
   "main": "dist/index.js",
   "scripts": {
