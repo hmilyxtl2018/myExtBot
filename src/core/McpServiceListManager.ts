@@ -12,10 +12,14 @@ import {
   ToolCall,
   ToolDefinition,
   ToolResult,
+  AgentPipeline,
+  PipelineRunResult,
 } from "./types";
 import { DelegationLogWriter } from "./DelegationLogWriter";
 import { AgentLifecycleManager } from "./AgentLifecycleManager";
 import { HealthMonitor } from "./HealthMonitor";
+import { PipelineRegistry } from "./PipelineRegistry";
+import { PipelineRunner } from "./PipelineRunner";
 
 /**
  * McpServiceListManager is the single source of truth for all MCP services and
@@ -48,6 +52,8 @@ export class McpServiceListManager {
 
   /** Monitors real-time health of registered services. */
   private healthMonitor = new HealthMonitor();
+  private pipelineRegistry = new PipelineRegistry();
+  private pipelineRunner = new PipelineRunner(this);
 
   // ── Service management ────────────────────────────────────────────────────
 
@@ -512,5 +518,32 @@ export class McpServiceListManager {
   resetServiceHealth(serviceName: string): ServiceHealthRecord {
     this.healthMonitor.resetToHealthy(serviceName);
     return this.healthMonitor.getRecord(serviceName);
+  // ── Pipeline management ───────────────────────────────────────────────────────
+
+  registerPipeline(pipeline: AgentPipeline): void {
+    this.pipelineRegistry.register(pipeline);
+  }
+
+  getPipeline(id: string): AgentPipeline | undefined {
+    return this.pipelineRegistry.get(id);
+  }
+
+  listPipelines(): AgentPipeline[] {
+    return this.pipelineRegistry.list();
+  }
+
+  unregisterPipeline(id: string): boolean {
+    return this.pipelineRegistry.unregister(id);
+  }
+
+  async runPipeline(
+    pipelineId: string,
+    initialInput?: Record<string, unknown>
+  ): Promise<PipelineRunResult> {
+    const pipeline = this.pipelineRegistry.get(pipelineId);
+    if (!pipeline) {
+      throw new Error(`Pipeline "${pipelineId}" is not registered.`);
+    }
+    return this.pipelineRunner.run(pipeline, initialInput);
   }
 }

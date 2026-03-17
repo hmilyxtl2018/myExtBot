@@ -41,6 +41,11 @@
  *   GET  /api/health                       — list all service health records
  *   GET  /api/health/:serviceName          — single service health record
  *   POST /api/health/:serviceName/reset    — manually reset service health to "healthy"
+ *   GET  /api/pipelines                   — list all pipelines
+ *   POST /api/pipelines                   — register a pipeline
+ *   GET  /api/pipelines/:id               — get a pipeline by ID
+ *   DELETE /api/pipelines/:id             — unregister a pipeline
+ *   POST /api/pipelines/:id/run           — execute a pipeline → PipelineRunResult
  *
  * Security configuration (environment variables):
  *   API_KEY        — Bearer/X-API-Key value for /api/* auth (unset = disabled)
@@ -82,6 +87,7 @@ import {
 import { recordAudit, getAuditLog } from "./security/auditLog";
 import { createLifecycleRoutes } from "./api/lifecycleRoutes";
 import { createHealthRoutes } from "./api/healthRoutes";
+import { createPipelineRoutes } from "./api/pipelineRoutes";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -215,6 +221,7 @@ app.use("/api", requireApiKey);
 
 // M10: Lifecycle routes
 app.use("/api", createLifecycleRoutes(manager));
+app.use("/api", createPipelineRoutes(manager));
 
 // M4: Health monitoring routes
 app.use("/api", createHealthRoutes(manager));

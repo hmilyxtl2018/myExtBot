@@ -367,4 +367,37 @@ export interface ServiceHealthRecord {
   totalSuccesses: number;
   /** Success rate (0–1) */
   successRate: number;
+// ── M3: Multi-Agent Pipeline ──────────────────────────────────────────────────
+
+export interface PipelineStep {
+  agentId: string;
+  toolName: string;
+  inputMapping?: Record<string, string | { fromStep: number; outputPath: string }>;
+  description?: string;
+}
+
+export interface AgentPipeline {
+  id: string;
+  name: string;
+  description?: string;
+  steps: PipelineStep[];
+}
+
+export interface PipelineRunResult {
+  pipelineId: string;
+  startedAt: string;
+  completedAt: string;
+  success: boolean;
+  stepResults: Array<{
+    stepIndex: number;
+    agentId: string;
+    toolName: string;
+    success: boolean;
+    output?: unknown;
+    error?: string;
+    durationMs: number;
+  }>;
+  finalOutput?: unknown;
+  failedAtStep?: number;
+  error?: string;
 }
