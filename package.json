@@ -1,6 +1,7 @@
 {
   "name": "my-ext-bot",
   "version": "1.0.0",
+  "description": "myExtBot — digital avatar asset system with Multi-Agent Pipeline support",
   "description": "myExtBot — digital avatar asset system with lineage graph support",
   "description": "myExtBot — digital avatar asset system",
   "name": "myextbot",
@@ -11,6 +12,8 @@
     "build": "tsc",
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
+    "server": "ts-node src/server.ts",
+    "test": "jest"
     "server": "ts-node src/server.ts"
     "test": "jest --passWithNoTests"
     "server": "ts-node src/server.ts",

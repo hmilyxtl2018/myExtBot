@@ -1,5 +1,6 @@
 import express from "express";
 import { McpServiceListManager } from "./core/McpServiceListManager";
+import { createPipelineRouter } from "./api/pipelineRoutes";
 import { createLineageRoutes } from "./api/lineageRoutes";
 
 const app = express();
@@ -103,6 +104,12 @@ import { McpServiceListManager } from "./core/McpServiceListManager";
 const app = express();
 app.use(express.json());
 
+export const manager = new McpServiceListManager();
+
+// ── Mount pipeline routes ────────────────────────────────────────────────────
+app.use("/api/pipelines", createPipelineRouter(manager));
+
+// ── Health check ─────────────────────────────────────────────────────────────
 const manager = new McpServiceListManager();
 
 // ─── Register demo scenes ─────────────────────────────────────────────────────
@@ -181,6 +188,16 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// ── Start server ─────────────────────────────────────────────────────────────
+const PORT = process.env.PORT ?? 3000;
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`myExtBot server listening on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
 // ─── Export for programmatic use (e.g. index.ts demo) ─────────────────────────
 
 export { app, manager };
