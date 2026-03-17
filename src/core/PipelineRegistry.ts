@@ -8,6 +8,7 @@ export class PipelineRegistry {
 
   register(pipeline: AgentPipeline): void {
     this.pipelines.set(pipeline.id, pipeline);
+    this.pipelines.set(pipeline.id, { ...pipeline });
   }
 
   get(id: string): AgentPipeline | undefined {
