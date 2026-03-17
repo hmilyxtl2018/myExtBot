@@ -25,7 +25,48 @@ server.listen(PORT, () => {
 });
 
 export { server, manager };
+import express from "express";
+import { McpServiceListManager } from "./core/McpServiceListManager";
+import { createPipelineRouter } from "./api/pipelineRoutes";
+import { createLineageRoutes } from "./api/lineageRoutes";
+
+const app = express();
+const rawPort = process.env.PORT;
+const PORT = rawPort && /^\d+$/.test(rawPort) ? parseInt(rawPort, 10) : 3000;
+
+app.use(express.json());
+
+// Create a shared manager instance
+const manager = new McpServiceListManager();
+
+// Mount lineage routes
+app.use("/api/lineage", createLineageRoutes(manager));
+
+// Health check
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.listen(PORT, () => {
+  console.log(`myExtBot server running on http://localhost:${PORT}`);
+  console.log(`  GET /api/lineage          — full graph (JSON/Mermaid/DOT)`);
+  console.log(`  GET /api/lineage/mermaid  — Mermaid text`);
+  console.log(`  GET /api/lineage/summary  — summary statistics`);
+});
+
+export { manager };
+import { createSceneTriggerRoutes } from "./api/sceneTriggerRoutes";
 /**
+ * Express server for myExtBot.
+ *
+ * REST API — M6: Agent Intent & Routing
+ *
+ *   GET /api/agents              — list all registered agents (with M6 fields)
+ *   GET /api/agents/route        — recommend agents for a query
+ *   GET /api/agents/route/best   — return the single best agent for a query
+ *
+ * Usage:
+ *   npx ts-node src/server.ts
  * Management HTTP server for the MCP Services List Manager.
  *
  * Exposes:
@@ -86,6 +127,120 @@ export { server, manager };
 
 import express, { Request, Response } from "express";
 import { McpServiceListManager } from "./core/McpServiceListManager";
+
+const app = express();
+app.use(express.json());
+
+export const manager = new McpServiceListManager();
+
+// ── Mount pipeline routes ────────────────────────────────────────────────────
+app.use("/api/pipelines", createPipelineRouter(manager));
+
+// ── Health check ─────────────────────────────────────────────────────────────
+const manager = new McpServiceListManager();
+
+// ─── Register demo scenes ─────────────────────────────────────────────────────
+
+manager.registerScene({
+  id: "research",
+  name: "Research",
+  description: "Deep information search and web crawling.",
+  serviceNames: ["SearchService", "FirecrawlService"],
+  triggers: [
+    {
+      type: "keyword",
+      keywords: ["搜索", "查一下", "search", "find", "最新", "news", "research"],
+    },
+    {
+      type: "time",
+      timeRange: { start: "08:00", end: "20:00" },
+    },
+  ],
+});
+
+manager.registerScene({
+  id: "dev",
+  name: "Development",
+  description: "Code execution and technical documentation lookup.",
+  serviceNames: ["CodeRunnerService", "FirecrawlService", "PerplexityService"],
+  triggers: [
+    {
+      type: "keyword",
+      keywords: ["代码", "编程", "code", "run", "execute", "debug", "compile"],
+    },
+    {
+      type: "agent",
+      agentId: "dev-agent",
+    },
+  ],
+});
+
+manager.registerScene({
+  id: "degraded",
+  name: "Degraded Mode",
+  description: "Minimal fallback scene activated when services are unhealthy.",
+  serviceNames: ["SearchService"],
+  triggers: [
+    {
+      type: "health",
+      condition: "any-service-down",
+    },
+  ],
+});
+
+manager.registerScene({
+  id: "full",
+  name: "Full Mode",
+  description: "All services available — activated when everything is healthy.",
+  serviceNames: [
+    "SearchService",
+    "FirecrawlService",
+    "PerplexityService",
+    "CodeRunnerService",
+  ],
+  triggers: [
+    {
+      type: "health",
+      condition: "all-services-healthy",
+    },
+  ],
+});
+
+// ─── Mount routes ─────────────────────────────────────────────────────────────
+
+app.use("/api/scenes", createSceneTriggerRoutes(manager));
+
+// Health check
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+// ── Start server ─────────────────────────────────────────────────────────────
+const PORT = process.env.PORT ?? 3000;
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`myExtBot server listening on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
+// ─── Export for programmatic use (e.g. index.ts demo) ─────────────────────────
+
+export { app, manager };
+
+// ─── Start server only when run directly ─────────────────────────────────────
+
+if (require.main === module) {
+  const PORT = process.env.PORT ?? 3000;
+  app.listen(PORT, () => {
+    console.log(`myExtBot server running on http://localhost:${PORT}`);
+  });
+}
+// ── Bootstrap example agents ──────────────────────────────────────────────────
+
+const manager = new McpServiceListManager();
+
 import { PluginManager } from "./core/PluginManager";
 import { DelegationLogReader } from "./core/DelegationLogReader";
 import { SearchService } from "./services/SearchService";
@@ -155,6 +310,30 @@ manager.registerAgent({
   name: "Research Bot",
   description: "Specialized in web search and information retrieval.",
   sceneId: "research",
+  systemPrompt:
+    "你是一个专注于网络信息获取的智能助手。每次回答必须附上信息来源 URL。优先返回最新的信息。",
+  intents: [
+    "web-search",
+    "fact-check",
+    "news",
+    "research",
+    "information-retrieval",
+    "搜索",
+    "查询",
+    "最新",
+  ],
+  domains: ["research", "information"],
+  languages: ["zh-CN", "en-US"],
+  responseStyle: "detailed",
+  primarySkill: "Web research & information retrieval",
+  capabilities: [
+    "Search the web",
+    "Find latest news",
+    "Fact checking",
+    "Research topics",
+  ],
+});
+
   canDelegateTo: ["scheduling-assistant"],
   primarySkill: "Web research & information retrieval",
   secondarySkills: ["Summarisation", "Source citation", "Fact verification"],
@@ -193,6 +372,46 @@ manager.registerAgent({
   name: "Dev Bot",
   description: "Runs code snippets and searches for documentation.",
   allowedServices: ["CodeRunnerService", "SearchService"],
+  systemPrompt:
+    "你是一个专业的编程助手。优先提供可直接运行的代码示例。代码必须有注释。",
+  intents: [
+    "coding",
+    "programming",
+    "run-code",
+    "debug",
+    "script",
+    "编程",
+    "代码",
+    "运行",
+  ],
+  domains: ["coding", "development"],
+  languages: ["zh-CN", "en-US"],
+  responseStyle: "markdown",
+  primarySkill: "Code execution & technical documentation search",
+  capabilities: [
+    "Run code snippets",
+    "Search documentation",
+    "Debug code",
+    "Write scripts",
+  ],
+});
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+
+/**
+ * Extract and validate the required `query` string from request query params.
+ * Returns the query string on success, or sends a 400 response and returns null.
+ */
+function extractQuery(req: Request, res: Response): string | null {
+  const q = req.query.query;
+  if (typeof q !== "string" || q.trim() === "") {
+    res.status(400).json({ error: "Missing required query parameter: query" });
+    return null;
+  }
+  return q;
+}
+
+/** GET /api/agents — list all agents with M6 persona/intent fields */
   canDelegateTo: ["research-bot"],
   primarySkill: "Code execution & developer tooling",
   secondarySkills: ["Documentation lookup", "Debugging assistance", "Script automation"],
@@ -375,6 +594,57 @@ app.get("/api/agents", (_req: Request, res: Response) => {
   res.json(manager.listAgents());
 });
 
+/**
+ * GET /api/agents/route
+ *   ?query=<string>  (required) — natural-language query
+ *   ?topN=<number>   (optional, default 3)
+ *
+ * Returns AgentRouteSuggestion[]
+ */
+app.get("/api/agents/route", (req: Request, res: Response) => {
+  const query = extractQuery(req, res);
+  if (query === null) return;
+
+  const topNRaw = req.query.topN;
+  const topN =
+    typeof topNRaw === "string" && /^\d+$/.test(topNRaw)
+      ? parseInt(topNRaw, 10)
+      : 3;
+
+  res.json(manager.routeAgent(query, topN));
+});
+
+/**
+ * GET /api/agents/route/best
+ *   ?query=<string>  (required)
+ *
+ * Returns { agentId: string | null, suggestion: AgentRouteSuggestion | null }
+ */
+app.get("/api/agents/route/best", (req: Request, res: Response) => {
+  const query = extractQuery(req, res);
+  if (query === null) return;
+
+  const suggestions = manager.routeAgent(query, 1);
+  const top = suggestions[0] ?? null;
+  const agentId = top && top.score > 0 ? top.agentId : null;
+
+  res.json({
+    agentId,
+    suggestion: top && top.score > 0 ? top : null,
+  });
+});
+
+// ── Start server ──────────────────────────────────────────────────────────────
+
+const PORT = process.env["PORT"] ?? 3000;
+app.listen(PORT, () => {
+  console.log(`myExtBot server running on http://localhost:${PORT}`);
+  console.log(`  GET /api/agents`);
+  console.log(`  GET /api/agents/route?query=<text>`);
+  console.log(`  GET /api/agents/route/best?query=<text>`);
+});
+
+export { app, manager };
 app.get("/api/agents/:id", (req: Request, res: Response) => {
   const agent = manager.listAgents().find((a) => a.id === String(req.params.id));
   if (!agent) {

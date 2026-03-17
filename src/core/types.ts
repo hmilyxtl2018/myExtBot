@@ -61,6 +61,455 @@ export interface DispatchRequest {
 export interface DispatchResult {
   success: boolean;
   data?: unknown;
+ * src/core/types.ts
+ *
+ * Core type definitions for the myExtBot Digital Avatar Asset System.
+ */
+
+// ─── Service types ────────────────────────────────────────────────────────────
+
+/** Unique identifier for a Service. */
+export type ServiceName = string;
+
+/** Unified result envelope returned by every Service execute() call. */
+export interface ServiceResult<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  /** HTTP status code (when applicable) */
+  statusCode?: number;
+  /** Retry-After seconds (populated on 429 responses) */
+  retryAfterSeconds?: number;
+}
+
+/** Minimal interface every MCP Service must implement. */
+export interface McpService {
+  /** Unique service name, e.g. "PerplexityService" */
+  readonly name: ServiceName;
+  /** Human-readable description */
+  readonly description: string;
+  /** Execute the service with an arbitrary payload */
+  execute(payload: unknown): Promise<ServiceResult>;
+}
+
+// ─── Tool types ───────────────────────────────────────────────────────────────
+
+/** A single Tool definition exposed by an Agent. */
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  serviceName: ServiceName;
+  inputSchema?: Record<string, unknown>;
+}
+
+// ─── Agent types ──────────────────────────────────────────────────────────────
+
+/** Lifecycle state of an Agent (M10). */
+export type AgentStatus = "active" | "sleeping" | "busy" | "retired";
+
+/** An Agent persona / profile. */
+export interface AgentProfile {
+  id: string;
+  name: string;
+  description: string;
+  /** Status in the lifecycle (M10) */
+  status: AgentStatus;
+  /** Services this agent owns */
+  ownedServices: ServiceName[];
+  /** Other agents this agent can delegate to */
+  canDelegateTo: string[];
+  /** Tools this agent exposes */
+  tools: ToolDefinition[];
+  /** System prompt injected into LLM — defines the agent's persona (M6) */
+  systemPrompt?: string;
+  /** Intent tags for automatic routing (M6) */
+  intents?: string[];
+}
+
+// ─── Scene types ──────────────────────────────────────────────────────────────
+
+/** Trigger conditions for automatic scene activation (M7). */
+export interface SceneTrigger {
+  keywords?: string[];
+  timeRange?: string;
+  agentId?: string;
+  /** Health-based trigger: activates when a service reaches this health state (M4) */
+  health?: ServiceHealth;
+}
+
+/** A Scene filters which services and tools are available. */
+export interface Scene {
+  id: string;
+  name: string;
+  description: string;
+  /** Service names allowed in this scene */
+  allowedServices: ServiceName[];
+  /** Auto-activation triggers (M7) */
+  triggers?: SceneTrigger;
+}
+
+// ─── Delegation types (M1) ───────────────────────────────────────────────────
+
+/** A single delegation event recorded in the log. */
+export interface DelegationLogEntry {
+  id: string;
+  timestamp: string;
+  fromAgentId: string;
+  toAgentId: string;
+  toolName: string;
+  serviceName: ServiceName;
+  payload: unknown;
+  result: ServiceResult;
+  durationMs: number;
+}
+
+// ─── Plugin types (M2) ───────────────────────────────────────────────────────
+
+/** A Plugin manifest describing an installable capability. */
+export interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  /** Services provided by this plugin */
+  services: ServiceName[];
+  /** Tools provided by this plugin */
+  tools: ToolDefinition[];
+  /** Required peer plugins */
+  dependencies?: string[];
+// ─────────────────────────────────────────────────────────────────────────────
+// Core types for myExtBot digital-avatar asset system
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Agent & Service types ────────────────────────────────────────────────────
+
+export interface ToolDefinition {
+  name: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+}
+
+export interface ServiceResult {
+/**
+ * Core types for the myExtBot digital avatar asset system.
+ */
+
+// ── Tool / Delegation types ────────────────────────────────────────────────
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, { type: string; description?: string; default?: unknown }>;
+    required?: string[];
+  };
+}
+
+export interface ToolCall {
+  toolName: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ToolResult {
+  success: boolean;
+  output?: unknown;
+ * Core types for myExtBot digital avatar asset system.
+ */
+
+// ─── Service Health ───────────────────────────────────────────────────────────
+
+/**
+ * Health status of a service.
+ *
+ * - "healthy"  : service is operating normally
+ * - "degraded" : service is operating with reduced capacity or elevated errors
+ * - "down"     : service is completely unavailable
+ *
+ * Note: health trigger conditions only check for "down" (any-service-down) or
+ * "healthy" (all-services-healthy). A "degraded" service does not satisfy
+ * "any-service-down" — it must be explicitly "down".
+ */
+export type ServiceHealth = "healthy" | "down" | "degraded";
+
+// ─── Scene ────────────────────────────────────────────────────────────────────
+
+/**
+ * Scene — a named collection of services activated together for a specific
+ * context or workflow.
+ */
+export interface Scene {
+  /** Unique identifier for the scene. */
+  id: string;
+  /** Human-readable name. */
+  name: string;
+  /** Optional description of when/why this scene is used. */
+  description?: string;
+  /** Names of services that belong to this scene. */
+  serviceNames: string[];
+  /**
+   * Optional trigger conditions that cause this scene to be automatically
+   * recommended by the SceneTriggerEngine.
+   */
+  triggers?: SceneTrigger[];
+}
+
+// ─── SceneTrigger ─────────────────────────────────────────────────────────────
+
+/**
+ * Scene 触发器 — 描述何时自动推荐激活此 Scene。
+ */
+export interface SceneTrigger {
+  /** 触发器类型 */
+  type: "keyword" | "time" | "agent" | "health";
+
+  // ── keyword 类型 ────────────────────────────────────────────────────────────
+  /**
+   * 当用户输入包含这些关键词时触发（大小写不敏感）。
+   * 例：["搜索", "查一下", "最新消息", "search", "find", "lookup"]
+   */
+  keywords?: string[];
+
+  // ── time 类型 ───────────────────────────────────────────────────────────────
+  /**
+   * 时间段范围（本地时间 **零填充 HH:MM** 格式，例如 "09:00"、"18:30"）。
+   * - 正常范围：start ≤ end，例如 { start: "09:00", end: "18:00" }
+   * - 跨午夜范围：start > end，例如 { start: "22:00", end: "06:00" }
+   *
+   * @example { start: "09:00", end: "18:00" }   // working hours
+   * @example { start: "22:00", end: "06:00" }   // overnight shift
+   */
+  timeRange?: { start: string; end: string };
+
+  // ── agent 类型 ──────────────────────────────────────────────────────────────
+  /**
+   * 当指定 Agent 被调用时触发。
+   * 例：agentId = "web-intel-agent" 被调用 → 激活 web-intelligence scene
+   */
+  agentId?: string;
+
+  // ── health 类型 ─────────────────────────────────────────────────────────────
+  /**
+   * 健康条件：
+   * - "any-service-down"：任何 Service 变为 down 时触发
+   * - "all-services-healthy"：所有 Service 恢复健康时触发
+   */
+  condition?: "any-service-down" | "all-services-healthy";
+}
+
+// ─── TriggerContext ───────────────────────────────────────────────────────────
+
+/**
+ * SceneTriggerEngine 的评估上下文。
+ */
+export interface TriggerContext {
+  /** 用户输入（用于 keyword 触发器） */
+  userInput?: string;
+  /**
+   * 当前本地时间（HH:MM，用于 time 触发器）。
+   * 不传则取当前系统时间。
+   */
+  currentTime?: string;
+  /** 当前被调用的 Agent ID（用于 agent 触发器） */
+  activeAgentId?: string;
+  /**
+   * 服务健康状态映射（用于 health 触发器）。
+   * 不传则取当前 HealthMonitor 状态（如果可用）。
+   */
+  serviceHealths?: Record<string, ServiceHealth>;
+}
+
+// ─── SceneTriggerResult ───────────────────────────────────────────────────────
+
+/**
+ * Scene 触发评估结果。
+ */
+export interface SceneTriggerResult {
+  sceneId: string;
+  sceneName: string;
+  /** 匹配的触发器（一个 Scene 可能有多个触发器同时满足） */
+  matchedTriggers: Array<{
+    type: SceneTrigger["type"];
+    /** 例："关键词匹配: 搜索, 查一下" */
+    reason: string;
+  }>;
+  /** 总得分（匹配的触发器数量 × 触发器权重） */
+  score: number;
+ * Core type definitions for myExtBot digital persona asset system.
+ *
+ * M6 — Agent Intent & Persona
+ * Extends AgentProfile with systemPrompt, intents, languages, responseStyle,
+ * and domains fields to support intent-driven routing via AgentRouter.
+ */
+
+// ── Tool & Service types ─────────────────────────────────────────────────────
+
+export interface ToolCall {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ToolResult {
+  success: boolean;
+  output?: unknown;
+  error?: string;
+}
+
+export interface McpService {
+  id: string;
+  name: string;
+  tools: ToolDefinition[];
+  call(toolName: string, args: Record<string, unknown>): Promise<ServiceResult>;
+}
+
+export interface AgentProfile {
+  id: string;
+  name: string;
+  description?: string;
+  /** IDs of services this agent is allowed to use */
+  allowedServices?: string[];
+  /** IDs of agents this agent can delegate tasks to ('*' means all) */
+  canDelegateTo?: string[];
+  /** System prompt injected when the agent drives an LLM */
+  systemPrompt?: string;
+  /** Intent tags used for automatic routing */
+  intents?: string[];
+}
+
+// ── Delegation types ─────────────────────────────────────────────────────────
+
+export interface DelegationRequest {
+  toolName: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface DelegationLog {
+  id: string;
+  fromAgentId: string;
+  toAgentId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  result?: ServiceResult;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+}
+
+// ── Pipeline types (M3) ──────────────────────────────────────────────────────
+
+/**
+ * A single execution step within a Pipeline.
+ */
+export interface PipelineStep {
+  /** ID of the agent that will execute this step */
+  agentId: string;
+  /** Name of the tool to invoke */
+  toolName: string;
+  /**
+   * Parameter mapping for the tool call:
+   * - string value: literal — passed directly to the tool
+   * - { fromStep: number; outputPath: string }: reference to the output of
+   *   step N (0-indexed).  outputPath supports dot-notation, e.g.
+   *   "results[0].url" or "answer".
+   */
+  inputMapping?: Record<string, string | { fromStep: number; outputPath: string }>;
+  /** Human-readable description of this step (optional) */
+  description?: string;
+}
+
+/**
+ * Definition of an Agent Pipeline — an ordered list of steps executed
+ * sequentially, with context passed between steps via inputMapping.
+ */
+export interface AgentPipeline {
+  /** Unique identifier */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Optional description */
+  description?: string;
+  /** Ordered list of steps to execute */
+  steps: PipelineStep[];
+}
+
+/**
+ * The result of a single Pipeline execution run.
+ */
+// ── Agent Profile ────────────────────────────────────────────────────────────
+
+/**
+ * Full profile of a registered digital-persona Agent.
+ */
+export interface AgentProfile {
+  /** Unique identifier for this agent. */
+  id: string;
+
+  /** Human-readable display name. */
+  name: string;
+
+  /** Short description of what this agent does. */
+  description?: string;
+
+  /** The scene (context/environment) this agent belongs to. */
+  sceneId?: string;
+
+  /**
+   * The specific services this agent is allowed to call.
+   * When undefined, the agent may call any service registered in its scene.
+   */
+  allowedServices?: string[];
+
+  /** The agent's primary skill / specialty (single phrase). */
+  primarySkill?: string;
+
+  /** List of natural-language capability descriptions. */
+  capabilities?: string[];
+
+  /** Whether this agent is currently active. */
+  enabled?: boolean;
+
+  // ── New in M6: Persona & Intent ──────────────────────────────────────────
+
+  /**
+   * System prompt injected to the LLM when running as this agent.
+   * Example: "你是一个专注于网络信息获取的智能助手。每次回答都要附上信息来源 URL。"
+   */
+  systemPrompt?: string;
+
+  /**
+   * Intent tags used by AgentRouter for routing.
+   * When the user's query matches these tags, this agent is preferred.
+   * Example: ["web-search", "fact-check", "news", "research", "information-retrieval"]
+   */
+  intents?: string[];
+
+  /**
+   * Languages this agent is proficient in.
+   * Example: ["zh-CN", "en-US", "ja"]
+   */
+  languages?: string[];
+
+  /**
+   * The agent's preferred response style.
+   * - "concise": short and direct, one or two sentences
+   * - "detailed": full explanation with background context
+   * - "bullet-points": key points in a list
+   * - "markdown": structured Markdown output
+   */
+  responseStyle?: "concise" | "detailed" | "bullet-points" | "markdown";
+
+  /**
+   * High-level domain tags (coarser-grained than intents).
+   * Example: ["research", "coding", "productivity", "creativity"]
+   */
+  domains?: string[];
+}
+
+// ── Agent Summary ────────────────────────────────────────────────────────────
+
+/**
+ * Lightweight summary of an AgentProfile returned by listAgents().
+ * Includes all M6 persona/intent fields so clients can display them.
  * Shared interfaces and types for the MCP Services List Manager.
  */
 
@@ -119,6 +568,99 @@ export interface ToolResult {
 }
 
 /**
+ * A single delegation log entry representing one agent-to-agent tool invocation.
+ */
+export interface DelegationLogEntry {
+  /** Unique entry ID */
+  id: string;
+  /** ISO 8601 timestamp when the delegation occurred */
+  timestamp: string;
+  /** The delegating agent */
+  fromAgentId: string;
+  /** The receiving agent */
+  toAgentId: string;
+  /** The tool that was invoked */
+  toolName: string;
+  /** The arguments passed to the tool */
+  arguments: Record<string, unknown>;
+  /** Whether the invocation succeeded */
+  success: boolean;
+  /** Error message if success === false */
+  error?: string;
+  /** Execution duration in milliseconds */
+  durationMs?: number;
+  /** Optional session ID for grouping related delegations */
+  sessionId?: string;
+}
+
+// ── Lineage Graph types ────────────────────────────────────────────────────
+
+/**
+ * A single node in the lineage graph.
+ */
+export interface LineageNode {
+  /** Unique node ID (based on agentId or toolName) */
+  id: string;
+  /** Node type */
+  type: "agent" | "tool" | "external-api";
+  /** Display label */
+  label: string;
+  /** Associated agent ID (if type === "agent") */
+  agentId?: string;
+  /** Associated tool name (if type === "tool") */
+  toolName?: string;
+  /** Whether the most recent execution succeeded */
+  success: boolean;
+  /** Execution duration in ms (if available) */
+  durationMs?: number;
+  /** ISO 8601 timestamp of the first occurrence */
+  timestamp: string;
+}
+
+/**
+ * A directed edge in the lineage graph.
+ */
+export interface LineageEdge {
+  /** Unique edge ID */
+  id: string;
+  /** Source node ID */
+  from: string;
+  /** Target node ID */
+  to: string;
+  /** Optional label (e.g. "委托" / "调用" / "返回结果") */
+  label?: string;
+  /** Edge type */
+  type: "delegation" | "tool-call" | "return";
+}
+
+/**
+ * A complete lineage graph.
+ */
+export interface LineageGraph {
+  /** Session ID (optional, used for grouping) */
+  sessionId?: string;
+  nodes: LineageNode[];
+  edges: LineageEdge[];
+  startedAt: string;
+  endedAt?: string;
+  /** Total node count */
+  nodeCount: number;
+  /** Total edge count */
+  edgeCount: number;
+  /** Overall success rate (successful tool nodes / total tool nodes) */
+  successRate: number;
+}
+
+/**
+ * Summary of a lineage graph (for the summary API endpoint).
+ */
+export interface LineageGraphSummary {
+  totalNodes: number;
+  totalEdges: number;
+  agentNodes: string[];
+  toolNodes: string[];
+  successRate: number;
+  timeRange: { earliest: string; latest: string };
  * Interface that every MCP service must implement.
  * A service groups one or more related tools under a single unit of management.
  */
@@ -244,6 +786,29 @@ export interface AgentSummary {
   name: string;
   description?: string;
   sceneId?: string;
+  primarySkill?: string;
+  capabilities?: string[];
+  enabled?: boolean;
+  toolCount: number;
+
+  // ── M6 fields ────────────────────────────────────────────────────────────
+  systemPrompt?: string;
+  intents?: string[];
+  languages?: string[];
+  responseStyle?: string;
+  domains?: string[];
+}
+
+// ── Delegation Log ───────────────────────────────────────────────────────────
+
+export interface DelegationLogEntry {
+  timestamp: string;
+  fromAgentId: string;
+  toAgentId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  success: boolean;
+  output?: unknown;
   allowedServices?: string[];
   canDelegateTo?: string[];
   primarySkill?: string;
@@ -396,6 +961,7 @@ export interface AgentLifecycleHistoryEntry {
  * Real-time health state of a Service.
  *
  * - "healthy"      — API is responding normally.
+ * - "degraded"     — 3–4 consecutive failures; still callable but with reduced confidence.
  * - "degraded"     — 3–4 consecutive failures; still callable with reduced confidence.
  * - "down"         — 5+ consecutive failures; calls are suspended.
  * - "rate-limited" — HTTP 429 received; waiting until rateLimitResetAt.
@@ -450,6 +1016,7 @@ export interface PipelineRunResult {
   startedAt: string;
   completedAt: string;
   success: boolean;
+  /** Per-step results, aligned with the steps array */
   stepResults: Array<{
     stepIndex: number;
     agentId: string;
@@ -459,6 +1026,9 @@ export interface PipelineRunResult {
     error?: string;
     durationMs: number;
   }>;
+  /** Output of the last step (treated as the pipeline's overall output) */
+  finalOutput?: unknown;
+  /** Index of the first step that failed (set only when success is false) */
   finalOutput?: unknown;
   failedAtStep?: number;
   error?: string;

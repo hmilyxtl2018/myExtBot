@@ -79,6 +79,445 @@ export class McpServiceListManager {
       },
     });
 
+/**
+ * src/core/McpServiceListManager.ts
+ *
+ * Central registry and dispatcher for all MCP Services.
+ * Integrates with HealthMonitor (M4) to provide:
+ *   - Automatic health tracking on every execute()
+ *   - Fallback routing when a service is "down" or "rate-limited"
+ *   - Health query APIs
+ */
+
+import { McpService, ServiceResult, ServiceHealthRecord } from "./types";
+import { HealthMonitor } from "./HealthMonitor";
+import { BaseService } from "../services/BaseService";
+
+/** Options passed to dispatch() or dispatchAs(). */
+export interface DispatchOptions {
+  /** If true, skip health checks (e.g. health-check pings themselves) */
+  skipHealthCheck?: boolean;
+}
+
+export class McpServiceListManager {
+  private services = new Map<string, McpService>();
+  private healthMonitor = new HealthMonitor();
+
+  // ── Registration ────────────────────────────────────────────────────────────
+
+  /** Register a service and initialise its health record. */
+  register(service: McpService): void {
+    if (this.services.has(service.name)) {
+      throw new Error(
+        `Service "${service.name}" is already registered. Use a unique name.`
+      );
+    }
+    this.services.set(service.name, service);
+    this.healthMonitor.init(service.name);
+  }
+
+  /** Retrieve a registered service by name. */
+  getService(name: string): McpService | undefined {
+    return this.services.get(name);
+  }
+
+  /** List all registered service names. */
+  listServices(): string[] {
+    return Array.from(this.services.keys());
+  }
+
+  // ── Dispatch ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Dispatch a call to the named service.
+   * Health checks are performed before execution:
+   *   1. checkRateLimitRecovery — auto-recover from expired rate-limit
+   *   2. isCallable — if false, route to fallback or return error
+   * Results are recorded in HealthMonitor after execution.
+   */
+  async dispatch(
+    serviceName: string,
+    payload: unknown,
+    options: DispatchOptions = {}
+  ): Promise<ServiceResult> {
+    const service = this.services.get(serviceName);
+    if (!service) {
+      return { success: false, error: `Service "${serviceName}" not found.` };
+    }
+
+    if (!options.skipHealthCheck) {
+      // 1. Check if rate-limit window has passed
+      this.healthMonitor.checkRateLimitRecovery(serviceName);
+
+      // 2. Check if service is callable
+      if (!this.healthMonitor.isCallable(serviceName)) {
+        const record = this.healthMonitor.getRecord(serviceName);
+        const fallbackName = (service as BaseService).fallbackServiceName;
+
+        if (fallbackName) {
+          console.warn(
+            `[HealthMonitor] Service "${serviceName}" is ${record.health}. ` +
+              `Routing to fallback "${fallbackName}".`
+          );
+          return this.dispatch(fallbackName, payload, options);
+        }
+
+        return {
+          success: false,
+          error: `Service "${serviceName}" is ${record.health}, no fallback available.`,
+        };
+      }
+    }
+
+    // 3. Execute
+    let result: ServiceResult;
+    try {
+      result = await service.execute(payload);
+    } catch (err: unknown) {
+      const errorMessage =
+        err instanceof Error ? err.message : String(err);
+      this.healthMonitor.recordFailure(serviceName, errorMessage);
+      return { success: false, error: errorMessage };
+    }
+
+    // 4. Record health outcome
+    if (result.success) {
+      this.healthMonitor.recordSuccess(serviceName);
+    } else {
+      const errorMsg = result.error ?? "Unknown error";
+      this.healthMonitor.recordFailure(
+        serviceName,
+        errorMsg,
+        result.retryAfterSeconds
+      );
+    }
+
+import {
+  AgentPipeline,
+  AgentProfile,
+  DelegationLog,
+  DelegationRequest,
+  McpService,
+  PipelineRunResult,
+  ServiceResult,
+} from "./types";
+import { PipelineRegistry } from "./PipelineRegistry";
+import { PipelineRunner } from "./PipelineRunner";
+
+let _logIdCounter = 0;
+function nextLogId(): string {
+  return `log-${Date.now()}-${++_logIdCounter}`;
+}
+
+/**
+ * McpServiceListManager — central hub for agents, services, and pipelines.
+ *
+ * Responsibilities:
+ *  - Register / query agents (AgentProfile)
+ *  - Register / query services (McpService)
+ *  - Dispatch tool calls on behalf of an agent (dispatchAs)
+ *  - Maintain an in-memory DelegationLog
+ *  - Register / run Multi-Agent Pipelines (M3)
+ */
+export class McpServiceListManager {
+  private agents = new Map<string, AgentProfile>();
+  private services = new Map<string, McpService>();
+  private delegationLogs: DelegationLog[] = [];
+
+  private pipelineRegistry = new PipelineRegistry();
+  private pipelineRunner = new PipelineRunner(this);
+
+  // ── Agent management ────────────────────────────────────────────────────────
+
+  registerAgent(agent: AgentProfile): void {
+    this.agents.set(agent.id, agent);
+  }
+
+  getAgent(id: string): AgentProfile | undefined {
+    return this.agents.get(id);
+  }
+
+  listAgents(): AgentProfile[] {
+    return Array.from(this.agents.values());
+  }
+
+  // ── Service management ──────────────────────────────────────────────────────
+
+  registerService(service: McpService): void {
+    this.services.set(service.id, service);
+  }
+
+  getService(id: string): McpService | undefined {
+    return this.services.get(id);
+  }
+
+  listServices(): McpService[] {
+    return Array.from(this.services.values());
+  }
+
+  // ── Delegation ──────────────────────────────────────────────────────────────
+
+  /**
+   * Dispatch a tool call on behalf of the given agent.
+   *
+   * The method finds a registered service that exposes the requested tool and
+   * that the agent is allowed to use.  Every call is recorded in the
+   * DelegationLog (fromAgentId is the calling agent; when called from a
+   * pipeline the caller uses "pipeline:{pipelineId}").
+   */
+  async dispatchAs(
+    agentId: string,
+    request: DelegationRequest
+  ): Promise<ServiceResult> {
+    const agent = this.agents.get(agentId);
+    const startedAt = new Date().toISOString();
+    const logId = nextLogId();
+    const startMs = Date.now();
+
+    const logEntry: DelegationLog = {
+      id: logId,
+      fromAgentId: agentId,
+      toAgentId: agentId,
+      toolName: request.toolName,
+      arguments: request.arguments,
+      startedAt,
+    };
+
+    // Resolve the service that owns the requested tool
+    const service = this.resolveService(agent, request.toolName);
+
+    if (!service) {
+      const error = `No accessible service found for tool "${request.toolName}" and agent "${agentId}"`;
+      logEntry.result = { success: false, error };
+      logEntry.completedAt = new Date().toISOString();
+      logEntry.durationMs = Date.now() - startMs;
+      this.delegationLogs.push(logEntry);
+      return { success: false, error };
+    }
+
+    logEntry.toAgentId = service.id;
+
+    try {
+      const result = await service.call(request.toolName, request.arguments);
+      logEntry.result = result;
+      logEntry.completedAt = new Date().toISOString();
+      logEntry.durationMs = Date.now() - startMs;
+      this.delegationLogs.push(logEntry);
+      return result;
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      logEntry.result = { success: false, error };
+      logEntry.completedAt = new Date().toISOString();
+      logEntry.durationMs = Date.now() - startMs;
+      this.delegationLogs.push(logEntry);
+      return { success: false, error };
+    }
+  }
+
+  /**
+   * Delegate a task from one agent to another (single-hop delegation).
+import { randomUUID } from "crypto";
+import {
+  DelegationLogEntry,
+  LineageGraph,
+  LineageGraphSummary,
+  ToolCall,
+  ToolDefinition,
+  ToolResult,
+} from "./types";
+import { LineageExporter } from "./LineageExporter";
+import { LineageGraphBuilder } from "./LineageGraphBuilder";
+
+/**
+ * BaseService — abstract base for all MCP services.
+ */
+export abstract class BaseService {
+  abstract readonly name: string;
+  abstract getToolDefinitions(): ToolDefinition[];
+  abstract execute(call: ToolCall): Promise<ToolResult>;
+}
+
+/**
+ * McpServiceListManager — manages a collection of BaseService instances,
+ * handles agent delegation, logs every delegation, and provides lineage graph
+ * building/exporting capabilities.
+ */
+export class McpServiceListManager {
+  private services = new Map<string, BaseService>();
+  private delegationLog: DelegationLogEntry[] = [];
+
+  private lineageBuilder = new LineageGraphBuilder();
+  private lineageExporter = new LineageExporter();
+
+  // ── Service registration ─────────────────────────────────────────────────
+
+  register(service: BaseService): void {
+    this.services.set(service.name, service);
+  }
+
+  getService(name: string): BaseService | undefined {
+    return this.services.get(name);
+  }
+
+  listServices(): string[] {
+    return [...this.services.keys()];
+  }
+
+  // ── Agent delegation ─────────────────────────────────────────────────────
+
+  /**
+   * Delegate a tool call from fromAgentId to toAgentId.
+   * The result and metadata are automatically logged to delegationLog.
+import { SceneTriggerEngine } from "./SceneTriggerEngine";
+import type { Scene, SceneTriggerResult, TriggerContext } from "./types";
+
+/**
+ * McpServiceListManager — manages the registry of Scenes and exposes
+ * scene-lookup and trigger-evaluation capabilities.
+ */
+export class McpServiceListManager {
+  private scenes: Map<string, Scene> = new Map();
+  private triggerEngine = new SceneTriggerEngine(this);
+
+  // ─── Scene registry ────────────────────────────────────────────────────────
+
+  /**
+   * Registers (or replaces) a Scene in the manager.
+   * The Scene may optionally include trigger conditions.
+   */
+  registerScene(scene: Scene): void {
+    this.scenes.set(scene.id, scene);
+  }
+
+  /** Returns a Scene by ID, or undefined if not found. */
+  getScene(id: string): Scene | undefined {
+    return this.scenes.get(id);
+  }
+
+  /** Returns all registered Scenes as an array. */
+  getScenes(): Scene[] {
+    return Array.from(this.scenes.values());
+  }
+
+  /** Removes a Scene from the registry. Returns true if it existed. */
+  removeScene(id: string): boolean {
+    return this.scenes.delete(id);
+  }
+
+  // ─── Trigger evaluation ────────────────────────────────────────────────────
+
+  /**
+   * Evaluates all registered Scenes against the provided context and returns
+   * a ranked list of recommendations (descending score).
+   */
+  autoDetectScene(context: TriggerContext): SceneTriggerResult[] {
+    return this.triggerEngine.evaluate(context);
+  }
+
+  /**
+   * Returns the ID of the best-matching Scene for the given context,
+   * or undefined if no Scene matches.
+   */
+  bestSceneForContext(context: TriggerContext): string | undefined {
+    return this.triggerEngine.bestScene(context);
+/**
+ * McpServiceListManager — Central registry for Agents and their tool services.
+ *
+ * M6 additions:
+ *  - listAgents() now includes all AgentProfile persona/intent fields in the summary
+ *  - routeAgent()        — delegates to AgentRouter.route()
+ *  - bestAgentForQuery() — delegates to AgentRouter.bestMatch()
+ */
+
+import type {
+  AgentProfile,
+  AgentSummary,
+  DelegationLogEntry,
+  ToolCall,
+  ToolResult,
+} from "./types";
+import { AgentRouter, type AgentRouteSuggestion } from "./AgentRouter";
+
+export class McpServiceListManager {
+  private readonly agents = new Map<string, AgentProfile>();
+  private readonly delegationLog: DelegationLogEntry[] = [];
+  private readonly agentRouter: AgentRouter;
+
+  constructor() {
+    this.agentRouter = new AgentRouter(this);
+  }
+
+  // ── Agent Registration ─────────────────────────────────────────────────────
+
+  /**
+   * Register a new Agent profile.
+   * Agents are enabled by default unless `enabled: false` is explicitly set.
+   */
+  registerAgent(profile: AgentProfile): void {
+    const normalised: AgentProfile = {
+      enabled: true,
+      ...profile,
+    };
+    this.agents.set(profile.id, normalised);
+  }
+
+  /**
+   * Update an existing Agent's profile fields (partial update).
+   * Returns true when the agent was found and updated, false otherwise.
+   */
+  updateAgent(id: string, partial: Partial<AgentProfile>): boolean {
+    const existing = this.agents.get(id);
+    if (!existing) return false;
+    this.agents.set(id, { ...existing, ...partial });
+    return true;
+  }
+
+  /** Remove an Agent from the registry. */
+  unregisterAgent(id: string): boolean {
+    return this.agents.delete(id);
+  }
+
+  /** Retrieve the full AgentProfile by ID. */
+  getAgent(id: string): AgentProfile | undefined {
+    return this.agents.get(id);
+  }
+
+  // ── Listing ────────────────────────────────────────────────────────────────
+
+  /**
+   * Returns lightweight summaries of all registered agents.
+   * All M6 persona/intent fields are included so callers can display them.
+   */
+  listAgents(): AgentSummary[] {
+    return Array.from(this.agents.values()).map((a) => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      sceneId: a.sceneId,
+      primarySkill: a.primarySkill,
+      capabilities: a.capabilities,
+      enabled: a.enabled,
+      toolCount: a.capabilities?.length ?? 0,
+      // M6 fields
+      systemPrompt: a.systemPrompt,
+      intents: a.intents,
+      languages: a.languages,
+      responseStyle: a.responseStyle,
+      domains: a.domains,
+    }));
+  }
+
+  // ── Delegation ─────────────────────────────────────────────────────────────
+
+  /**
+   * Delegate a tool call from one agent to another.
+   * The delegation is recorded in the in-memory log.
+   */
+  delegateAs(
+    fromAgentId: string,
+    toAgentId: string,
+    toolCall: ToolCall
+  ): ToolResult {
 import {
   AgentProfile,
   AgentSummary,
@@ -492,6 +931,142 @@ export class McpServiceListManager {
   async delegateAs(
     fromAgentId: string,
     toAgentId: string,
+    request: DelegationRequest
+  ): Promise<ServiceResult> {
+    const fromAgent = this.agents.get(fromAgentId);
+    if (!fromAgent) {
+      return { success: false, error: `Agent "${fromAgentId}" not found` };
+    }
+
+    const allowed =
+      fromAgent.canDelegateTo?.includes("*") ||
+      fromAgent.canDelegateTo?.includes(toAgentId);
+
+    if (!allowed) {
+      return {
+        success: false,
+        error: `Agent "${fromAgentId}" is not allowed to delegate to "${toAgentId}"`,
+      };
+    }
+
+    return this.dispatchAs(toAgentId, request);
+  }
+
+  getDelegationLogs(): DelegationLog[] {
+    return [...this.delegationLogs];
+  }
+
+  // ── Pipeline management (M3) ────────────────────────────────────────────────
+    call: ToolCall
+  ): Promise<ToolResult> {
+    const service = this.services.get(toAgentId);
+
+    const start = Date.now();
+    let result: ToolResult;
+
+    if (!service) {
+      result = { success: false, error: `Service not found: ${toAgentId}` };
+    } else {
+      try {
+        result = await service.execute(call);
+      } catch (err) {
+        result = { success: false, error: (err as Error).message };
+      }
+    }
+
+    const durationMs = Date.now() - start;
+
+    const entry: DelegationLogEntry = {
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      fromAgentId,
+      toAgentId,
+      toolName: call.toolName,
+      arguments: call.arguments,
+      success: result.success,
+      error: result.error,
+      durationMs,
+    };
+
+    this.delegationLog.push(entry);
+    return result;
+  }
+
+  // ── Delegation log access ────────────────────────────────────────────────
+
+  getDelegationLog(): readonly DelegationLogEntry[] {
+    return this.delegationLog;
+  }
+
+  clearDelegationLog(): void {
+    this.delegationLog = [];
+  }
+
+  // ── Lineage graph ────────────────────────────────────────────────────────
+
+  /**
+   * Build a lineage graph from the in-memory delegation log.
+   * Optionally filter by time range.
+   */
+  buildLineageGraph(options?: { startTime?: string; endTime?: string }): LineageGraph {
+    if (options?.startTime && options?.endTime) {
+      return this.lineageBuilder.buildForTimeRange(
+        this.delegationLog,
+        options.startTime,
+        options.endTime
+      );
+    }
+    return this.lineageBuilder.build(this.delegationLog);
+  }
+
+  /**
+   * Export the lineage graph in Mermaid format.
+   */
+  exportLineageMermaid(options?: { startTime?: string; endTime?: string }): string {
+    const graph = this.buildLineageGraph(options);
+    return this.lineageExporter.toMermaid(graph);
+  }
+
+  /**
+   * Export the lineage graph in JSON format.
+   */
+  exportLineageJSON(options?: { startTime?: string; endTime?: string }): string {
+    const graph = this.buildLineageGraph(options);
+    return this.lineageExporter.toJSON(graph);
+  }
+
+  /**
+   * Export the lineage graph in DOT format.
+   */
+  exportLineageDOT(options?: { startTime?: string; endTime?: string }): string {
+    const graph = this.buildLineageGraph(options);
+    return this.lineageExporter.toDOT(graph);
+  }
+
+  /**
+   * Get a summary of the lineage graph.
+   */
+  getLineageSummary(): LineageGraphSummary {
+    const graph = this.buildLineageGraph();
+    const agentNodes = graph.nodes
+      .filter((n) => n.type === "agent")
+      .map((n) => n.agentId ?? n.label);
+    const toolNodes = graph.nodes
+      .filter((n) => n.type === "tool")
+      .map((n) => n.toolName ?? n.label);
+
+    const timestamps = this.delegationLog.map((e) => e.timestamp).sort();
+    const earliest = timestamps[0] ?? new Date().toISOString();
+    const latest = timestamps[timestamps.length - 1] ?? new Date().toISOString();
+
+    return {
+      totalNodes: graph.nodeCount,
+      totalEdges: graph.edgeCount,
+      agentNodes,
+      toolNodes,
+      successRate: graph.successRate,
+      timeRange: { earliest, latest },
+    };
     toolCall: ToolCall
   ): Promise<ToolResult> {
     const fromAgent = this.agents.get(fromAgentId);
@@ -525,6 +1100,48 @@ export class McpServiceListManager {
       timestamp: new Date().toISOString(),
       fromAgentId,
       toAgentId,
+      toolName: toolCall.name,
+      arguments: toolCall.arguments,
+      success: false,
+    };
+
+    try {
+      // Stub execution — in a real system this would call the service layer.
+      const output = { message: `[stub] ${toAgentId}.${toolCall.name} executed` };
+      entry.success = true;
+      entry.output = output;
+      this.delegationLog.push(entry);
+      return { success: true, output };
+    } catch (err) {
+      entry.error = err instanceof Error ? err.message : String(err);
+      this.delegationLog.push(entry);
+      return { success: false, error: entry.error };
+    }
+  }
+
+  /** Read the in-memory delegation log. */
+  getDelegationLog(): Readonly<DelegationLogEntry[]> {
+    return this.delegationLog;
+  }
+
+  // ── M6: Agent Routing ──────────────────────────────────────────────────────
+
+  /**
+   * Recommend the best-fit Agents for the given natural-language query.
+   *
+   * @param query User input.
+   * @param topN  Number of suggestions to return (default 3).
+   */
+  routeAgent(query: string, topN?: number): AgentRouteSuggestion[] {
+    return this.agentRouter.route(query, topN);
+  }
+
+  /**
+   * Return the ID of the single best-matching Agent, or undefined when no
+   * agent scores above 0 for the query.
+   */
+  bestAgentForQuery(query: string): string | undefined {
+    return this.agentRouter.bestMatch(query);
       toolName: toolCall.toolName,
       arguments: toolCall.arguments,
       success: result.success,
@@ -572,6 +1189,22 @@ export class McpServiceListManager {
         result: `[mock] Tool '${request.toolName}' executed successfully.`,
       },
     };
+   * Dispatch a call on behalf of (as) a specific agent identity.
+   * Delegates to dispatch() after logging the agent context.
+   */
+  async dispatchAs(
+    agentId: string,
+    serviceName: string,
+    payload: unknown,
+    options: DispatchOptions = {}
+  ): Promise<ServiceResult> {
+    console.log(
+      `[McpServiceListManager] Agent "${agentId}" dispatching to "${serviceName}"`
+    );
+    return this.dispatch(serviceName, payload, options);
+  }
+
+  // ── Health API ───────────────────────────────────────────────────────────────
    * Returns the delegation log entries in reverse-chronological order
    * (most recent first), up to the last {@link DELEGATION_LOG_MAX} entries.
    */
@@ -622,6 +1255,7 @@ export class McpServiceListManager {
   }
 
   /**
+   * Manually reset a service's health to "healthy" (ops / admin use).
    * Manually reset a service's health to "healthy" (ops/admin use).
    * Returns the updated record.
    */
@@ -652,6 +1286,47 @@ export class McpServiceListManager {
   ): Promise<PipelineRunResult> {
     const pipeline = this.pipelineRegistry.get(pipelineId);
     if (!pipeline) {
+      const now = new Date().toISOString();
+      return {
+        pipelineId,
+        startedAt: now,
+        completedAt: now,
+        success: false,
+        stepResults: [],
+        error: `Pipeline "${pipelineId}" not found`,
+      };
+    }
+    return this.pipelineRunner.run(pipeline, initialInput);
+  }
+
+  // ── Internal helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Find a service that:
+   *  1. Exposes the requested tool
+   *  2. Is in the agent's allowedServices list (or agent has no restriction)
+   *
+   * If agent is undefined (e.g., pipeline virtual agent), any service with the
+   * tool is accepted.
+   */
+  private resolveService(
+    agent: AgentProfile | undefined,
+    toolName: string
+  ): McpService | undefined {
+    for (const service of this.services.values()) {
+      const hasTool = service.tools.some((t) => t.name === toolName);
+      if (!hasTool) continue;
+
+      if (!agent || !agent.allowedServices || agent.allowedServices.length === 0) {
+        return service;
+      }
+
+      if (agent.allowedServices.includes(service.id)) {
+        return service;
+      }
+    }
+    return undefined;
+  }
       throw new Error(`Pipeline "${pipelineId}" is not registered.`);
     }
     return this.pipelineRunner.run(pipeline, initialInput);
