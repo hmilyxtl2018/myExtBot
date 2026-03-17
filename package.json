@@ -1,4 +1,7 @@
 {
+  "name": "myextbot",
+  "version": "1.0.0",
+  "description": "Digital twin asset system with dynamic plugin marketplace",
   "name": "my-ext-bot",
   "version": "0.1.0",
   "description": "myExtBot — Digital Avatar Asset System",
@@ -27,6 +30,21 @@
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
     "lint": "eslint 'src/**/*.ts'",
     "test": "jest --passWithNoTests"
   },
