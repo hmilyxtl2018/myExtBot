@@ -2,3 +2,30 @@ node_modules/
 dist/
 .env
 *.env
+*.jsonl
+*.js.map
+*.d.ts.map
+.env
+.env.local
+.env.*.local
+
+# Runtime data - do not commit user installation state
+data/installed-plugins.json
+
+# Build artifacts
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+.env
+.env.local
+*.d.ts.map
+.env.*
+# Runtime plugin installation state — generated at runtime, not part of source
+plugins-state.json
