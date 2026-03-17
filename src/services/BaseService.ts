@@ -1,3 +1,7 @@
+import { ToolCall, ToolDefinition, ToolResult } from "../core/types";
+
+/**
+ * Base class for all tool services.
 import { ToolDefinition, ToolCall, ToolResult } from "../types";
 
 /**
@@ -8,6 +12,8 @@ import { ToolDefinition, ToolCall, ToolResult } from "../types";
  */
 export abstract class BaseService {
   abstract readonly name: string;
+
+  abstract getToolDefinitions(): ToolDefinition[];
 
   /** Returns the list of tools this service exposes. */
   abstract getToolDefinitions(): ToolDefinition[];
