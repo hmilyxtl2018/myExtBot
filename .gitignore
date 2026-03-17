@@ -4,3 +4,5 @@ dist/
 *.d.ts.map
 .env
 .env.*
+# Runtime plugin installation state — generated at runtime, not part of source
+plugins-state.json
