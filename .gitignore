@@ -1,4 +1,5 @@
 # Logs
+logs
 logs/
 *.log
 npm-debug.log*
@@ -7,6 +8,21 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 # Dependencies
 node_modules/
 
@@ -47,6 +63,30 @@ Thumbs.db
 *.sln
 *.sw?
 *.swp
+
+# Local fonts (large binary assets – add manually if needed)
+apps/desktop/public/fonts/
+node_modules/
+dist/
+.env
+*.env
+*.jsonl
+*.js.map
+*.d.ts.map
+.env
+.env.local
+.env.*.local
+
+# Runtime data - do not commit user installation state
+data/installed-plugins.json
+
+# Build artifacts
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
 
 # Local fonts (large binary assets – add manually if needed)
 apps/desktop/public/fonts/

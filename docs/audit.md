@@ -47,6 +47,43 @@ The `blob_path` column in `artifacts` stores the path relative to the configured
 
 ---
 
+---
+
+## Storage Tiering
+
+The audit system uses a **two-tier storage model** to balance queryability with storage efficiency.
+
+### Tier 1 – SQLite (Structured / Queryable Data)
+
+Structured, low-to-medium size records live in SQLite where they can be queried, joined, and indexed. The following tables form the core schema:
+
+| Table | Contents |
+|-------|----------|
+| `sessions` | Session lifecycle (start/end timestamps, metadata) |
+| `messages` | Chat messages (user, assistant, system roles) |
+| `tool_calls` | Every proposed and executed tool call, with approval status |
+| `run_nodes` | Nodes in the RunGraph (tool calls, verifications, interventions) |
+| `run_edges` | Directed edges between RunGraph nodes (control-flow and data-flow) |
+| `claims` | Verifier assertions attached to a run node |
+| `artifacts` | Metadata record for each artifact, with a `blob_path` or `blob_hash` reference into Tier 2 |
+
+Large binary columns (e.g., screenshots stored as Base64) must **not** be placed directly in SQLite. Instead, a row in `artifacts` stores the metadata and a pointer to the Tier 2 blob.
+
+### Tier 2 – File System / Blob Storage (Large Artifacts)
+
+Binary and large-text artifacts are written to disk under a structured path and referenced by **content-addressable hash** or **session-scoped path** in the `artifacts.blob_path` column.
+
+| Artifact type | Stored as | Example path |
+|---------------|-----------|--------------|
+| Screenshot (PNG) | Binary file | `blobs/<session_id>/screenshots/<hash>.png` |
+| HTML DOM snapshot | Compressed text | `blobs/<session_id>/doms/<hash>.html.gz` |
+| Downloaded file | Binary file | `blobs/<session_id>/downloads/<filename>` |
+| Command stdout/stderr | Text file | `blobs/<session_id>/cmd/<tool_call_id>.txt` |
+
+The `blob_path` column in `artifacts` stores the path relative to the configured `audit.blob_root` directory. The `blob_hash` column stores the SHA-256 content hash for integrity verification.
+
+---
+
 ## Schema
 
 ### `sessions`
@@ -128,6 +165,10 @@ The `blob_path` column in `artifacts` stores the path relative to the configured
 | `blob_hash` | TEXT | SHA-256 hex digest of the blob content |
 | `timestamp` | TEXT | ISO-8601 |
 
+---
+
+| `kind` | TEXT | `screenshot`, `file_content`, `command_output`, etc. |
+| `data` | TEXT | Base64 or JSON payload |
 ### `llm_calls`
 
 | Column | Type | Description |
@@ -152,6 +193,10 @@ The `blob_path` column in `artifacts` stores the path relative to the configured
 | Session start/end | `sessions` |
 | User and agent messages | `messages` |
 | Every proposed tool call (approved or denied) | `tool_calls` |
+| Tool execution results | `tool_calls.result` |
+| RunGraph node/edge lifecycle | `run_nodes`, `run_edges` |
+| Verifier assertions | `claims` |
+| Screenshot and file artifact metadata | `artifacts` (blob in Tier 2) |
 | Tool execution results + duration | `tool_calls.result` + `tool_calls.duration_ms` |
 | RunGraph node/edge lifecycle | `run_nodes`, `run_edges` |
 | Verifier assertions | `claims` |
@@ -181,6 +226,7 @@ A session is marked as a **golden trace** when all of the following are true:
 A user may also manually promote any session to golden via the Audit UI. Golden traces feed the [Knowledge Database](memory.md) for long-term learning.
 
 ---
+| Screenshots and file snapshots | `artifacts` |
 
 ## Current Limitations
 

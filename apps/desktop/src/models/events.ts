@@ -56,6 +56,61 @@ export interface PlanStep {
   status: "pending" | "running" | "done" | "failed" | "skipped";
 }
 
+/** An audit log entry */
+export interface AuditEntry {
+  id: string;
+  session_id: string;
+  event_type: string;
+  payload: unknown;
+  timestamp: string;
+}
+
+// ── RunGraph types ────────────────────────────────────────────────────────────
+
+export type RunNodeKind = "tool_call" | "screenshot" | "verifier" | "user_message" | "agent_message";
+export type RunNodeStatus = "pending" | "running" | "completed" | "failed" | "blocked";
+export type EdgeKind = "control" | "data" | "verification";
+export type ClaimResult = "pass" | "fail" | "skip";
+
+export interface RunNode {
+  id: string;
+  session_id: string;
+  kind: RunNodeKind;
+  tool?: string;
+  status: RunNodeStatus;
+  confidence?: number;
+  inputs?: unknown;
+  outputs?: unknown;
+  timestamp: string;
+}
+
+export interface RunEdge {
+  id: string;
+  session_id: string;
+  src: string;
+  dst: string;
+  kind: EdgeKind;
+  blocked: boolean;
+  timestamp: string;
+}
+
+export interface VerifierClaim {
+  id: string;
+  session_id: string;
+  run_node_id: string;
+  verifier: string;
+  result: ClaimResult;
+  score?: number;
+  detail?: string;
+  timestamp: string;
+}
+
+export interface Intervention {
+  id: string;
+  session_id: string;
+  kind: "block_edge" | "replace_artifact" | "insert_verifier";
+  payload: unknown;
+  timestamp: string;
 /** A step in an AgentPlan produced by the Planner */
 export interface AgentPlanStep {
   id: string;
@@ -88,13 +143,12 @@ export type AgentEvent =
   | { type: "ToolCallResult"; result: ToolCallResult }
   | { type: "AuditEntry"; entry: AuditEntry }
   | { type: "AgentThinking"; step: ThinkingStep }
-  | { type: "EmergencyStop" };
+  | { type: "EmergencyStop" }
+  // RunGraph events
+  | { type: "GraphNodeAdded"; node: RunNode }
+  | { type: "GraphNodeUpdated"; node: RunNode }
+  | { type: "GraphEdgeAdded"; edge: RunEdge }
+  | { type: "ArtifactCreated"; artifact_id: string; run_node_id: string; kind: string }
+  | { type: "VerifierResult"; claim: VerifierClaim }
+  | { type: "InterventionApplied"; intervention: Intervention };
 
-/** An audit log entry */
-export interface AuditEntry {
-  id: string;
-  session_id: string;
-  event_type: string;
-  payload: unknown;
-  timestamp: string;
-}

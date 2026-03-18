@@ -2,11 +2,14 @@ mod agent;
 mod audit;
 mod commands;
 mod events;
+mod graph;
+mod intervention;
 mod executor;
 mod llm;
 mod permissions;
 mod planner;
 mod tools;
+mod verifier;
 
 use tauri::Manager;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -29,8 +32,14 @@ pub fn run() {
             let agent = agent::AgentState::new(app_handle.clone());
             // Record session start in audit DB before any tool calls can arrive
             db.log_session_start(agent.session_id())?;
+            // Initialize graph builder
+            let graph_builder = graph::GraphBuilder::new(
+                app_handle.clone(),
+                agent.session_id().to_string(),
+            );
             app.manage(db);
             app.manage(agent);
+            app.manage(graph_builder);
             // Initialize permissions
             let perms = permissions::PermissionManager::new();
             app.manage(perms);
@@ -50,6 +59,12 @@ pub fn run() {
             commands::approve_plan,
             commands::deny_plan,
             commands::get_audit_log,
+            commands::get_run_graph,
+            commands::block_edge,
+            commands::replace_artifact,
+            commands::insert_verifier,
+            commands::save_verifier_rule,
+            commands::list_verifier_rules,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

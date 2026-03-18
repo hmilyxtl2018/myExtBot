@@ -121,8 +121,120 @@ pub enum AgentEvent {
     ToolCallResult { result: ToolCallResult },
     AuditEntry { entry: AuditEntry },
     EmergencyStop,
+    // ── RunGraph events ──────────────────────────────────────────────────────
+    GraphNodeAdded { node: RunNode },
+    GraphNodeUpdated { node: RunNode },
+    GraphEdgeAdded { edge: RunEdge },
+    ArtifactCreated { artifact_id: String, run_node_id: String, kind: String },
+    VerifierResult { claim: VerifierClaim },
+    InterventionApplied { intervention: Intervention },
 }
 
 impl AgentEvent {
     pub const EVENT_NAME: &'static str = "agent-event";
+}
+
+// ── RunGraph types ────────────────────────────────────────────────────────────
+
+/// A node in the execution graph.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunNode {
+    pub id: String,
+    pub session_id: String,
+    pub kind: RunNodeKind,
+    pub tool: Option<String>,
+    pub status: RunNodeStatus,
+    pub confidence: Option<f64>,
+    pub inputs: Option<serde_json::Value>,
+    pub outputs: Option<serde_json::Value>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunNodeKind {
+    ToolCall,
+    Screenshot,
+    Verifier,
+    UserMessage,
+    AgentMessage,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunNodeStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Blocked,
+}
+
+/// A directed edge between two run nodes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunEdge {
+    pub id: String,
+    pub session_id: String,
+    pub src: String,
+    pub dst: String,
+    pub kind: EdgeKind,
+    pub blocked: bool,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeKind {
+    Control,
+    Data,
+    Verification,
+}
+
+/// A verifier result / claim.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifierClaim {
+    pub id: String,
+    pub session_id: String,
+    pub run_node_id: String,
+    pub verifier: String,
+    pub result: ClaimResult,
+    pub score: Option<f64>,
+    pub detail: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimResult {
+    Pass,
+    Fail,
+    Skip,
+}
+
+impl std::fmt::Display for ClaimResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClaimResult::Pass => write!(f, "pass"),
+            ClaimResult::Fail => write!(f, "fail"),
+            ClaimResult::Skip => write!(f, "skip"),
+        }
+    }
+}
+
+/// A user-initiated intervention.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Intervention {
+    pub id: String,
+    pub session_id: String,
+    pub kind: InterventionKind,
+    pub payload: serde_json::Value,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InterventionKind {
+    BlockEdge,
+    ReplaceArtifact,
+    InsertVerifier,
 }
