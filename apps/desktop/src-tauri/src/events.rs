@@ -61,6 +61,15 @@ pub struct PlanStep {
     pub index: usize,
     pub description: String,
     pub status: PlanStepStatus,
+    /// Optional tool name for steps that invoke a tool (e.g. `"fs.readFile"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    /// Optional JSON parameters for the tool call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Value>,
+    /// Execution result text, filled in after the step completes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,5 +225,59 @@ mod tests {
             serde_json::to_value(PlanStepStatus::Skipped).unwrap().as_str().unwrap(),
             "skipped"
         );
+    }
+
+    // ── PlanStep new fields ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_plan_step_optional_fields_serialize_when_set() {
+        let step = PlanStep {
+            id: "s1".into(),
+            index: 0,
+            description: "Read a file".into(),
+            status: PlanStepStatus::Pending,
+            tool: Some("fs.readFile".into()),
+            params: Some(serde_json::json!({"path": "/tmp/foo.txt"})),
+            result: Some("file contents".into()),
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        assert_eq!(json["tool"], "fs.readFile");
+        assert_eq!(json["params"]["path"], "/tmp/foo.txt");
+        assert_eq!(json["result"], "file contents");
+    }
+
+    #[test]
+    fn test_plan_step_optional_fields_omitted_when_none() {
+        let step = PlanStep {
+            id: "s2".into(),
+            index: 1,
+            description: "Think about it".into(),
+            status: PlanStepStatus::Pending,
+            tool: None,
+            params: None,
+            result: None,
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        assert!(json.get("tool").is_none(), "tool should be absent when None");
+        assert!(json.get("params").is_none(), "params should be absent when None");
+        assert!(json.get("result").is_none(), "result should be absent when None");
+    }
+
+    #[test]
+    fn test_plan_step_round_trips_through_json() {
+        let step = PlanStep {
+            id: "s3".into(),
+            index: 2,
+            description: "Fetch data".into(),
+            status: PlanStepStatus::Running,
+            tool: Some("net.fetch".into()),
+            params: Some(serde_json::json!({"url": "https://example.com"})),
+            result: None,
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        let back: PlanStep = serde_json::from_value(json).unwrap();
+        assert_eq!(back.id, "s3");
+        assert_eq!(back.tool.as_deref(), Some("net.fetch"));
+        assert!(back.result.is_none());
     }
 }
