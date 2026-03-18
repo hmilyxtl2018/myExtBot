@@ -15,7 +15,7 @@
 | Executor（AgentPlan → 工具调用） | ✅ 完成 |
 | 计划审批 UI（PlanApprovalModal） | ✅ 完成 |
 | 工具调用审批 UI（ApprovalModal） | ✅ 完成 |
-| 审计数据库（5 张表 + LLM 调用日志） | ✅ 完成 |
+| 审计数据库（8 张表 + LLM 调用日志 + Blob 存储设计） | ✅ 完成 |
 | `fs.readFile` 工具实现 | ✅ 完成 |
 | `cmd.run` 工具实现 | ✅ 完成 |
 | `fs.applyPatch` | 🔶 占位符 |
@@ -83,10 +83,11 @@
 - `get_audit_log` — 查询最近 N 条 tool_calls 记录
 
 #### `audit.rs` ✅
-- 5 张表：sessions / messages / tool_calls / artifacts / llm_calls
+- 8 张表（来自合并后的完整 schema）：sessions / messages / tool_calls / artifacts / llm_calls / run_nodes / run_edges / claims
 - `log_session_start`, `log_message`, `log_tool_call`, `update_tool_call_result`, `log_llm_call`, `recent_entries`
+- 存储分层设计（docs/audit.md）：Tier 1 SQLite + Tier 2 文件系统 Blob
 - 所有 migration 语句都是 `CREATE TABLE IF NOT EXISTS`（幂等）
-- ⚠️ 当前使用 `open_in_memory()`，应用退出后数据丢失
+- ⚠️ 当前使用 `open_in_memory()`，应用退出后数据丢失；run_nodes/run_edges/claims 等新表在 Rust 实现中尚未使用
 
 #### `permissions.rs` 🔶
 - `PermissionManager` 持有 `session_tool_permits: HashSet<String>`
