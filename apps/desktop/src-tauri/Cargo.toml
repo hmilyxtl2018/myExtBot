@@ -27,7 +27,21 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 jsonschema = "0.18"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+dotenvy = "0.15"
+diffy = "0.4"
 
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+tempfile = "3"
+
+[[example]]
+name = "llm_smoke"
+required-features = []
+
+[[example]]
+name = "net_smoke"
+required-features = []
