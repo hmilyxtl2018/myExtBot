@@ -76,11 +76,13 @@ Only Rust transitions the state machine. React displays the current state; the s
 | Module | Purpose |
 |--------|---------|
 | `events.rs` | Typed event model for UI subscription (`AgentEvent` enum) |
+| `events.rs` | Typed event model for UI subscription (AgentEvent enum) |
 | `agent.rs` | Agent state machine (Idle/Thinking/WaitingApproval/RunningTool/Stopped/Completed/Failed) |
 | `tools/` | Tool registry, JSON schema validation, and tool implementations |
 | `permissions.rs` | Allowlist checking + session-scoped permit cache |
 | `audit.rs` | SQLite-backed audit logging |
 | `commands.rs` | Tauri IPC commands (`send_message`, `emergency_stop`, `approve`/`deny`) |
+| `commands.rs` | Tauri IPC commands (send_message, emergency_stop, approve/deny) |
 
 ### apps/desktop/src/ (React)
 

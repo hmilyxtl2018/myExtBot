@@ -1,0 +1,74 @@
+[
+  {
+    "id": "weather-service",
+    "name": "Weather Service",
+    "version": "1.0.0",
+    "author": "community",
+    "description": "Get current weather and forecasts for any location.",
+    "category": "Utilities",
+    "registryUrl": "local://weather-service",
+    "homepage": "https://github.com/example/weather-service",
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get current weather for a location.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": { "type": "string", "description": "City name or coordinates." },
+            "units": { "type": "string", "description": "celsius or fahrenheit", "default": "celsius" }
+          },
+          "required": ["location"]
+        }
+      }
+    ]
+  },
+  {
+    "id": "translator-service",
+    "name": "Translator Service",
+    "version": "1.2.0",
+    "author": "community",
+    "description": "Translate text between languages.",
+    "category": "Productivity",
+    "registryUrl": "local://translator-service",
+    "tools": [
+      {
+        "name": "translate_text",
+        "description": "Translate text from one language to another.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "Text to translate." },
+            "targetLanguage": { "type": "string", "description": "Target language code, e.g. zh-CN, en, ja." },
+            "sourceLanguage": { "type": "string", "description": "Source language code (optional, auto-detect if omitted)." }
+          },
+          "required": ["text", "targetLanguage"]
+        }
+      }
+    ]
+  },
+  {
+    "id": "summarizer-service",
+    "name": "Summarizer Service",
+    "version": "0.9.0",
+    "author": "community",
+    "description": "Summarize long texts into concise bullet points.",
+    "category": "Productivity",
+    "registryUrl": "local://summarizer-service",
+    "tools": [
+      {
+        "name": "summarize_text",
+        "description": "Summarize a long piece of text.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "Text to summarize." },
+            "maxPoints": { "type": "number", "description": "Max bullet points (default: 5).", "default": 5 },
+            "style": { "type": "string", "description": "bullet-points or paragraph", "default": "bullet-points" }
+          },
+          "required": ["text"]
+        }
+      }
+    ]
+  }
+]

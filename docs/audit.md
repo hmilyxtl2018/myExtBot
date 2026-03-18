@@ -129,6 +129,10 @@ The `blob_path` column in `artifacts` stores the path relative to the configured
 
 ---
 
+| `kind` | TEXT | `screenshot`, `file_content`, `command_output`, etc. |
+| `data` | TEXT | Base64 or JSON payload |
+| `timestamp` | TEXT | ISO-8601 |
+
 ## What Is Logged
 
 | Event | Where |
@@ -164,6 +168,7 @@ A session is marked as a **golden trace** when all of the following are true:
 A user may also manually promote any session to golden via the Audit UI. Golden traces feed the [Knowledge Database](memory.md) for long-term learning.
 
 ---
+| Screenshots and file snapshots | `artifacts` |
 
 ## Replay
 
