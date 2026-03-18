@@ -1,0 +1,17 @@
+{
+  "name": "myextbot-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "description": "myExtBot — digital avatar asset system",
+  "workspaces": [
+    "apps/desktop",
+    "services/playwright-sidecar"
+  ],
+  "scripts": {
+    "dev:sidecar": "npm --workspace=services/playwright-sidecar run dev",
+    "build:sidecar": "npm --workspace=services/playwright-sidecar run build",
+    "dev:desktop": "npm --workspace=apps/desktop run tauri:dev",
+    "build:desktop": "npm --workspace=apps/desktop run tauri:build"
+  },
+  "license": "MIT"
+}
