@@ -6,6 +6,7 @@ interface Props {
   events: AgentEvent[];
   agentStatus: AgentStatus;
   onSend: (text: string) => void;
+  extraDisabled?: boolean;
 }
 
 function formatTime(ts: string): string {
@@ -23,9 +24,9 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 // Gap 8: Chinese status labels for busy indicator
-const BUSY_STATUS = new Set<AgentStatus>(["Thinking", "RunningTool"]);
+const BUSY_STATUS = new Set<AgentStatus>(["Thinking", "RunningTool", "Planning", "WaitingPlanApproval"]);
 
-export default function ChatPanel({ events, agentStatus, onSend }: Props) {
+export default function ChatPanel({ events, agentStatus, onSend, extraDisabled = false }: Props) {
   const [input, setInput] = useState("");
   // Gap 6: auto-scroll ref
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -40,7 +41,7 @@ export default function ChatPanel({ events, agentStatus, onSend }: Props) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  const isBusy = BUSY_STATUS.has(agentStatus);
+  const isBusy = BUSY_STATUS.has(agentStatus) || extraDisabled;
 
   const handleSend = () => {
     const text = input.trim();

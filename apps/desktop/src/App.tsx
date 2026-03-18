@@ -3,22 +3,25 @@ import ChatPanel from "./components/ChatPanel";
 import PlanPanel from "./components/PlanPanel";
 import AgentLogPanel from "./components/AgentLogPanel";
 import ApprovalModal from "./components/ApprovalModal";
+import PlanApprovalModal from "./components/PlanApprovalModal";
 import EmergencyStop from "./components/EmergencyStop";
 import GraphPanel from "./components/GraphPanel";
 import ProfileDashboard from "./components/ProfileDashboard";
 import Icon from "./components/Icon";
 import { useEventStream } from "./hooks/useEventStream";
-import type { ToolCallRequest } from "./models/events";
+import type { AgentPlan, ToolCallRequest } from "./models/events";
 import "./App.css";
 
 const STATUS_LABEL: Record<string, string> = {
-  Idle:             "空闲",
-  Thinking:         "思考中",
-  WaitingApproval:  "等待审批",
-  RunningTool:      "工具执行中",
-  Stopped:          "已停止",
-  Completed:        "已完成",
-  Failed:           "执行失败",
+  Idle:                "空闲",
+  Planning:            "规划中",
+  WaitingPlanApproval: "等待确认计划",
+  Thinking:            "思考中",
+  WaitingApproval:     "等待审批",
+  RunningTool:         "工具执行中",
+  Stopped:             "已停止",
+  Completed:           "已完成",
+  Failed:              "执行失败",
 };
 
 type RightTab = "log" | "graph" | "profile";
@@ -26,8 +29,11 @@ type RightTab = "log" | "graph" | "profile";
 export default function App() {
   const [pendingApproval, setPendingApproval] = useState<ToolCallRequest | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>("log");
+  const [pendingPlan, setPendingPlan] = useState<AgentPlan | null>(null);
+
   const { events, agentStatus, sendMessage } = useEventStream({
     onToolCallRequest: (req) => setPendingApproval(req),
+    onPlanReady: (plan) => setPendingPlan(plan),
   });
 
   const handleApprove = async (req: ToolCallRequest) => {
@@ -59,6 +65,29 @@ export default function App() {
     setPendingApproval(null);
   };
 
+  const handleApprovePlan = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("approve_plan");
+    } catch {
+      console.warn("approve_plan invoked (stub)");
+    }
+    setPendingPlan(null);
+  };
+
+  const handleDenyPlan = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("deny_plan");
+    } catch {
+      console.warn("deny_plan invoked (stub)");
+    }
+    setPendingPlan(null);
+  };
+
+  const isInputDisabled =
+    agentStatus === "Planning" || agentStatus === "WaitingPlanApproval";
+
   return (
     <div className="app-layout">
       <header className="app-header">
@@ -85,7 +114,12 @@ export default function App() {
         </aside>
 
         <section className="panel panel-chat">
-          <ChatPanel events={events} agentStatus={agentStatus} onSend={sendMessage} />
+          <ChatPanel
+            events={events}
+            agentStatus={agentStatus}
+            onSend={sendMessage}
+            extraDisabled={isInputDisabled}
+          />
         </section>
 
         <aside className="panel panel-log panel-right">
@@ -124,6 +158,14 @@ export default function App() {
           request={pendingApproval}
           onApprove={handleApprove}
           onDeny={handleDeny}
+        />
+      )}
+
+      {pendingPlan && (
+        <PlanApprovalModal
+          plan={pendingPlan}
+          onApprove={handleApprovePlan}
+          onDeny={handleDenyPlan}
         />
       )}
     </div>

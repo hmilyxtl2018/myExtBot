@@ -5,30 +5,40 @@
 myExtBot is a Windows-first "digital twin" desktop bot, structured as:
 
 ```
-┌──────────────────────────────────────────────────┐
-│  Tauri Desktop App (apps/desktop)                │
-│                                                  │
-│  ┌──────────────┐    ┌──────────────────────┐   │
-│  │  React UI    │◄───│  Rust Event Bus       │   │
-│  │  (Vite)      │    │  (Tauri IPC)          │   │
-│  └──────┬───────┘    └──────────┬───────────┘   │
-│         │ invoke/listen         │                 │
-│         │              ┌────────┴──────────┐     │
-│         │              │  Agent State      │     │
-│         │              │  Machine (Rust)   │     │
-│         │              └────────┬──────────┘     │
-│         │                       │                 │
-│         │              ┌────────┴──────────┐     │
-│         │              │  Tool Registry    │     │
-│         │              │  + Permissions    │     │
-│         │              └────────┬──────────┘     │
-│         │                       │                 │
-│         │              ┌────────┴──────────┐     │
-│         │              │  Audit DB         │     │
-│         │              │  (SQLite)         │     │
-│         │              └───────────────────┘     │
-└─────────┼────────────────────────────────────────┘
-          │ WebSocket JSON-RPC
+┌──────────────────────────────────────────────────────┐
+│  Tauri Desktop App (apps/desktop)                    │
+│                                                      │
+│  ┌──────────────┐    ┌──────────────────────────┐   │
+│  │  React UI    │◄───│  Rust Event Bus           │   │
+│  │  (Vite)      │    │  (Tauri IPC / agent-event)│   │
+│  └──────┬───────┘    └──────────┬───────────────┘   │
+│         │ invoke/listen         │                     │
+│         │              ┌────────┴──────────┐         │
+│         │              │  Agent FSM        │         │
+│         │              │  (9 states)       │         │
+│         │              └────────┬──────────┘         │
+│         │                       │                     │
+│         │              ┌────────┴──────────┐         │
+│         │              │  Planner (LLM)    │         │
+│         │              │  → AgentPlan      │         │
+│         │              └────────┬──────────┘         │
+│         │                       │                     │
+│         │              ┌────────┴──────────┐         │
+│         │              │  Executor (LLM)   │         │
+│         │              │  → tool dispatch  │         │
+│         │              └────────┬──────────┘         │
+│         │                       │                     │
+│         │              ┌────────┴──────────┐         │
+│         │              │  Tool Registry    │         │
+│         │              │  + Permissions    │         │
+│         │              └────────┬──────────┘         │
+│         │                       │                     │
+│         │              ┌────────┴──────────┐         │
+│         │              │  Audit DB         │         │
+│         │              │  (SQLite)         │         │
+│         │              └───────────────────┘         │
+└─────────┼────────────────────────────────────────────┘
+          │ WebSocket JSON-RPC (planned)
           ▼
 ┌──────────────────────────────────┐
 │  Playwright Sidecar              │
@@ -83,38 +93,142 @@ Only Rust transitions the state machine. React displays the current state; the s
 | `audit.rs` | SQLite-backed audit logging |
 | `commands.rs` | Tauri IPC commands (`send_message`, `emergency_stop`, `approve`/`deny`) |
 | `commands.rs` | Tauri IPC commands (send_message, emergency_stop, approve/deny) |
+| Module | Purpose | Status |
+|--------|---------|--------|
+| `events.rs` | Typed event model — `AgentEvent` enum, `AgentStatus`, `AgentPlan`, etc. | ✅ Complete |
+| `agent.rs` | 9-state FSM with oneshot approval channels for plan and tool calls | ✅ Complete |
+| `llm.rs` | OpenAI-compatible client — `chat_completion`, zeroizing `ApiKey`, `LlmError` | ✅ Complete |
+| `planner.rs` | `run_planner()` — single LLM call produces a structured `AgentPlan` | ✅ Complete |
+| `executor.rs` | `run_executor()` — topological step traversal, per-step LLM, approval gate | ✅ Complete |
+| `commands.rs` | Tauri IPC: `send_message`, `approve/deny_plan`, `approve/deny_tool_call`, `get_audit_log` | ✅ Complete |
+| `permissions.rs` | Session-scoped permit cache; static allowlists not yet wired | 🔶 Partial |
+| `audit.rs` | SQLite (5 tables) — sessions, messages, tool_calls, artifacts, llm_calls | ✅ Complete |
+| `tools/` | Registry + JSON Schema validation + 8 tool definitions | ✅ Registry; tools partial |
 
 ### apps/desktop/src/ (React)
 
-| Component | Purpose |
-|-----------|---------|
-| `ChatPanel` | Displays chat messages from user and agent |
-| `PlanPanel` | Displays the current agent execution plan |
-| `ApprovalModal` | Requests user approval for proposed tool calls |
-| `AuditTimeline` | Streams audit events in real time |
-| `EmergencyStop` | One-click agent halt button |
+| Component | Purpose | Status |
+|-----------|---------|--------|
+| `ChatPanel` | User/assistant chat messages | ✅ Complete |
+| `PlanPanel` | Live execution plan progress | ✅ Complete |
+| `ApprovalModal` | Tool-call approval dialog | ✅ Complete |
+| `PlanApprovalModal` | Plan approval dialog (new) | ✅ Complete |
+| `AuditTimeline` | Real-time audit event stream | ✅ Complete |
+| `AgentLogPanel` | Agent thinking + tool results | ✅ Complete |
+| `EmergencyStop` | One-click agent halt | ✅ Complete |
+| `useEventStream` | Tauri event listener hook | ✅ Complete |
 
 ### services/playwright-sidecar/
 
-WebSocket JSON-RPC 2.0 server. The Tauri backend connects as a client and invokes browser automation via structured method calls.
+WebSocket JSON-RPC 2.0 server. The Tauri backend connects as a client and invokes browser automation via structured method calls. Currently a scaffold — method implementations are placeholders.
+
+## Agent FSM
+
+```
+Idle ──────────────────────────────────────► Planning
+                                                │
+                              ┌─────────────────┴──── Failed
+                              │
+                              ▼
+                       WaitingPlanApproval
+                         │         │
+                    deny │         │ approve
+                         ▼         ▼
+                        Idle     Thinking ◄──────────────────────┐
+                                   │                              │
+                        ┌──────────┴────────────┐                │
+                        │                       │                 │
+                        ▼                       ▼                 │
+                  WaitingApproval          Completed              │
+                    │       │                                     │
+               deny │       │ approve                            │
+                    ▼       ▼                                     │
+                 Thinking  RunningTool ──────────────────────────┘
+                              │
+                              ▼
+                           Completed / Failed
+
+Any state ──► Stopped (emergency stop)
+Stopped  ──► Idle
+```
+
+| State | Meaning |
+|-------|---------|
+| `Idle` | Waiting for user input |
+| `Planning` | Planner LLM call in progress |
+| `WaitingPlanApproval` | Plan generated, waiting for user to approve/cancel |
+| `Thinking` | Executor LLM call in progress for a specific step |
+| `WaitingApproval` | Tool call proposed, waiting for user approval |
+| `RunningTool` | Tool executing |
+| `Completed` | All steps done |
+| `Failed` | Unrecoverable error |
+| `Stopped` | Emergency stop triggered |
 
 ## Message Flow
 
 ```
 User types message
-    → React sends invoke("send_message")
-    → Rust logs to audit DB, emits ChatMessage event
-    → Agent transitions to Thinking
-    → LLM call (future)
-    → Agent proposes ToolCallRequest
-    → AgentEvent::ToolCallRequest emitted to UI
-    → ApprovalModal shown
-    → User approves → invoke("approve_tool_call")
-    → Agent transitions to RunningTool
-    → Tool executed (with allowlist check)
-    → ToolCallResult emitted
-    → Audit DB updated
-    → Agent transitions to Completed or loops
+    → React invoke("send_message")
+    → Rust: log to audit DB, emit ChatMessage
+    → transition: Idle → Planning
+    → emit: PlanningStarted
+    → Planner LLM call → AgentPlan
+    → emit: PlanReady { plan }
+    → transition: Planning → WaitingPlanApproval
+    → React shows PlanApprovalModal
+    → User clicks "批准执行" → invoke("approve_plan")
+    → transition: WaitingPlanApproval → Thinking
+    → Executor loops over plan.steps (topological order):
+        → Executor LLM call → ToolCall { name, arguments }
+        → transition: Thinking → WaitingApproval
+        → emit: ToolCallRequest
+        → React shows ApprovalModal
+        → User approves → invoke("approve_tool_call")
+        → transition: WaitingApproval → RunningTool
+        → Tool dispatched, result captured
+        → emit: ToolCallResult
+        → audit DB updated
+        → transition: RunningTool → Thinking (next step)
+    → All steps done → transition: → Completed
+```
+
+## Sequence Diagram
+
+The following Mermaid diagram illustrates the full message flow between the three layers for a typical tool-call cycle:
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as React UI<br/>(stateless subscriber)
+    participant Core as Tauri Core<br/>(Rust – state owner)
+    participant Sidecar as Node Sidecar<br/>(RPC executor)
+
+    User->>UI: types message & clicks Send
+    UI->>Core: invoke("send_message", { content })
+    Core->>Core: persist message to SQLite
+    Core->>Core: state → Thinking
+    Core-->>UI: emit AgentEvent::StateChanged(Thinking)
+    Core->>Core: call LLM (async)
+    Core->>Core: state → WaitingApproval
+    Core-->>UI: emit AgentEvent::ToolCallRequest { tool, params, risk }
+    UI->>User: show ApprovalModal
+    User->>UI: clicks Approve
+    UI->>Core: invoke("approve_tool_call", { id })
+    Core->>Core: state → RunningTool
+    Core-->>UI: emit AgentEvent::StateChanged(RunningTool)
+
+    alt browser automation tool
+        Core->>Sidecar: JSON-RPC request { method, params }
+        Sidecar-->>Core: JSON-RPC response { result }
+    else local tool (fs / cmd)
+        Core->>Core: execute tool directly
+    end
+
+    Core->>Core: persist ToolCallResult to SQLite
+    Core-->>UI: emit AgentEvent::ToolCallResult { id, success, output }
+    Core->>Core: state → Completed (or loops back to Thinking)
+    Core-->>UI: emit AgentEvent::StateChanged(Completed)
+    UI->>User: render result / updated chat
 ```
 
 ## Sequence Diagram

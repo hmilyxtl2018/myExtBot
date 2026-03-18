@@ -121,6 +121,17 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             rule_json    TEXT NOT NULL,
             timestamp    TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS llm_calls (
+            id                TEXT PRIMARY KEY,
+            session_id        TEXT NOT NULL REFERENCES sessions(id),
+            phase             TEXT NOT NULL,
+            model             TEXT NOT NULL,
+            prompt_tokens     INTEGER,
+            completion_tokens INTEGER,
+            duration_ms       INTEGER,
+            timestamp         TEXT NOT NULL
+        );
         ",
     )?;
     Ok(())
@@ -180,6 +191,34 @@ impl AuditDb {
         conn.execute(
             "UPDATE tool_calls SET result=?1, duration_ms=?2 WHERE id=?3",
             params![result_json, duration_ms as i64, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn log_llm_call(
+        &self,
+        id: &str,
+        session_id: &str,
+        phase: &str,
+        model: &str,
+        prompt_tokens: u32,
+        completion_tokens: u32,
+        duration_ms: u64,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO llm_calls (id, session_id, phase, model, prompt_tokens, completion_tokens, duration_ms, timestamp) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![
+                id,
+                session_id,
+                phase,
+                model,
+                prompt_tokens as i64,
+                completion_tokens as i64,
+                duration_ms as i64,
+                now
+            ],
         )?;
         Ok(())
     }

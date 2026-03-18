@@ -4,7 +4,10 @@ mod commands;
 mod events;
 mod graph;
 mod intervention;
+mod executor;
+mod llm;
 mod permissions;
+mod planner;
 mod tools;
 mod verifier;
 
@@ -43,6 +46,9 @@ pub fn run() {
             // Initialize tool registry
             let tools = tools::ToolRegistry::new();
             app.manage(tools);
+            // Initialize LLM client from environment
+            let llm_client = llm::client_from_env();
+            app.manage(llm_client);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -50,6 +56,8 @@ pub fn run() {
             commands::emergency_stop,
             commands::approve_tool_call,
             commands::deny_tool_call,
+            commands::approve_plan,
+            commands::deny_plan,
             commands::get_audit_log,
             commands::get_run_graph,
             commands::block_edge,

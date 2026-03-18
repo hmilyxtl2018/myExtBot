@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentStatus {
     Idle,
+    Planning,
+    WaitingPlanApproval,
     Thinking,
     WaitingApproval,
     RunningTool,
@@ -54,7 +56,7 @@ pub struct ChatMessage {
     pub timestamp: DateTime<Utc>,
 }
 
-/// A single plan step.
+/// A single plan step (for PlanUpdated — execution tracking).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanStep {
     pub id: String,
@@ -71,6 +73,29 @@ pub enum PlanStepStatus {
     Done,
     Failed,
     Skipped,
+}
+
+/// A step in an agent plan produced by the Planner.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentPlanStep {
+    pub id: String,
+    pub index: usize,
+    pub intent: String,
+    pub tool: String,
+    pub params_preview: serde_json::Value,
+    pub depends_on: Vec<String>,
+    pub risk: RiskLevel,
+    pub needs_credential: Option<String>,
+}
+
+/// A structured plan produced by the Planner.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentPlan {
+    pub id: String,
+    pub goal: String,
+    pub steps: Vec<AgentPlanStep>,
+    pub overall_risk: RiskLevel,
+    pub requires_credentials: Vec<String>,
 }
 
 /// An audit log entry.
@@ -90,6 +115,8 @@ pub enum AgentEvent {
     StatusChanged { status: AgentStatus },
     ChatMessage { message: ChatMessage },
     PlanUpdated { steps: Vec<PlanStep> },
+    PlanningStarted,
+    PlanReady { plan: AgentPlan },
     ToolCallRequest { request: ToolCallRequest },
     ToolCallResult { result: ToolCallResult },
     AuditEntry { entry: AuditEntry },

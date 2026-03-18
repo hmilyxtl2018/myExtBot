@@ -1,5 +1,6 @@
 # Logs
 logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -24,32 +25,66 @@ dist-ssr
 *.sw?
 # Dependencies
 node_modules/
-target/
 
 # Build outputs
 dist/
+dist-ssr/
 build/
-*.d.ts.map
-
-# Tauri
+target/
 apps/desktop/src-tauri/target/
 apps/desktop/dist/
+*.tsbuildinfo
+*.d.ts.map
+*.js.map
+*.jsonl
+
+# Vite / local config
+*.local
 
 # Env / secrets
 .env
+.env.local
+.env.*.local
 *.env
 *.env.local
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
 
-# Editor
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
 .vscode/settings.json
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 *.swp
 
+# Local fonts (large binary assets – add manually if needed)
+apps/desktop/public/fonts/
+node_modules/
+dist/
+.env
+*.env
+*.jsonl
+*.js.map
+*.d.ts.map
+.env
+.env.local
+.env.*.local
+
+# Runtime data - do not commit user installation state
+data/installed-plugins.json
+
+# Build artifacts
+*.tsbuildinfo
+
 # Logs
+logs/
 *.log
 npm-debug.log*
 
