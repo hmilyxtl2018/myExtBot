@@ -22,5 +22,150 @@
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "@tauri-apps/cli": "^2"
+  "name": "myextbot-workspace",
+  "private": true,
+  "workspaces": [
+    "apps/desktop",
+    "services/playwright-sidecar"
+  ],
+  "scripts": {
+    "dev:sidecar": "npm --workspace=services/playwright-sidecar run dev",
+    "build:sidecar": "npm --workspace=services/playwright-sidecar run build",
+    "dev:desktop": "npm --workspace=apps/desktop run tauri:dev",
+    "build:desktop": "npm --workspace=apps/desktop run tauri:build"
+  "name": "myextbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "server": "ts-node src/server.ts",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hmilyxtl2018/myExtBot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/hmilyxtl2018/myExtBot/issues"
+  },
+  "homepage": "https://github.com/hmilyxtl2018/myExtBot#readme",
+  "dependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.4.0",
+    "express": "^5.2.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
+  "description": "Digital twin asset system with dynamic plugin marketplace",
+  "name": "my-ext-bot",
+  "version": "0.1.0",
+  "description": "myExtBot — Digital Avatar Asset System",
+  "version": "1.0.0",
+  "description": "myExtBot — digital avatar asset system with Multi-Agent Pipeline support",
+  "description": "myExtBot — digital avatar asset system with lineage graph support",
+  "description": "myExtBot — digital avatar asset system",
+  "name": "myextbot",
+  "version": "1.0.0",
+  "description": "myExtBot — digital avatar asset system",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "server": "node dist/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "@types/node": "^20.12.7"
+  "description": "myExtBot — digital persona asset system",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
+    "lint": "eslint 'src/**/*.ts'",
+    "test": "jest --passWithNoTests"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18"
+    "start": "node dist/index.js",
+    "server": "ts-node src/server.ts",
+    "test": "jest"
+    "server": "ts-node src/server.ts"
+    "test": "jest --passWithNoTests"
+    "server": "ts-node src/server.ts",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+    "@types/node": "^20.11.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.11",
+    "ts-jest": "^29.1.2"
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  "version": "0.1.0",
+  "description": "myExtBot — unified MCP Services List Manager for LLM tool orchestration",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node src/index.ts",
+    "dev": "ts-node src/index.ts",
+    "server": "ts-node src/server.ts"
+  },
+  "keywords": [
+    "mcp",
+    "llm",
+    "tools",
+    "bot"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
   }
 }
