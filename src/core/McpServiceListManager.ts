@@ -460,8 +460,6 @@ export class McpServiceListManager {
   /** Returns a registered service by name, or undefined. */
   getService(name: string): BaseService | undefined {
     return this.services.get(name);
-  getService(name: string): BaseService | undefined {
-    return this.services.get(name);
   }
 
   listServices(): string[] {
