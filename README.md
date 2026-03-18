@@ -1,10 +1,18 @@
+# Tauri + React + Typescript
+
+This template should help get you started developing with Tauri, React and Typescript in Vite.
+
+## Recommended IDE Setup
+
+- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
 # myExtBot
 
 A Windows-first "digital twin" desktop bot inspired by Cline. Built with:
 
 - **Tauri 2** (Rust backend) + **React** (Vite frontend)
 - **Node.js Playwright sidecar** for browser automation
-- **SQLite** audit log (all events, tool calls, and artifacts)
+- **SQLite** audit log (all events, tool calls, LLM calls, and artifacts)
+- **Planner + Executor** dual-layer LLM architecture
 - **Permissioned tool execution**: every tool call requires user approval
 myExtBot is a TypeScript-based multi-agent bot framework with MCP (Model Context Protocol) service management, SLA contract enforcement, and a REST API.
 myExtBot 是一个数字分身资产体系，支持多 Agent 协作、工具调用分发与成本追踪。
@@ -850,11 +858,960 @@ manager.resetServiceHealth("PerplexityService");
 
 ---
 
+## 🖼 Screenshots
+
+### 💬 Chat — Solo Bot mode
+> Chat with your personal AI agent; the sidebar shows live agent status, the current plan, and any pending tool-approval requests.
+
+![Chat view](https://github.com/user-attachments/assets/941afd7f-5879-425a-afa1-93334124040f)
+
+### 🗂 Team Board — multi-agent collaboration
+> Kanban board (Pending / In Progress / Done) shared across the agent fleet, plus a live inter-agent message feed on the right.
+
+![Team Board view](https://github.com/user-attachments/assets/e96973c2-9838-4831-8328-d79a6581e5f1)
+
+### 📋 Audit Log
+> Every model call, tool execution, and permission decision is recorded in SQLite and shown here in paginated, filterable rows.
+
+![Audit Log view](https://github.com/user-attachments/assets/99f32fdb-934b-4982-8a3c-622b6b7392c0)
+
+### 🔍 Intelligence Watch
+> Domain signal feed — the bot periodically scans configured sources and surfaces ranked, colour-coded insights.
+
+![Intel Watch view](https://github.com/user-attachments/assets/47b72fb4-e5ff-43b3-bef1-0c84fad46986)
+
+---
+
+## ⚡ Quick API test (no GUI needed)
+
+Want to verify your API key works **before** building the full desktop app?
+The `llm_smoke` example runs the complete LLM pipeline from the command line in seconds —
+only **Rust / Cargo** is required (no Node.js, no GTK libraries, no Tauri GUI).
+
+```bash
+# 1. Clone and enter the Rust crate
+git clone https://github.com/<your-username>/myExtBot.git
+cd myExtBot/apps/desktop/src-tauri
+
+# 2a. OpenAI (or any OpenAI-compatible proxy, e.g. xiaoai.plus)
+OPENAI_API_KEY=sk-your-key \
+  cargo run --example llm_smoke
+
+# 2b. With a proxy (e.g. xiaoai.plus with any supported model)
+OPENAI_API_KEY=sk-your-key \
+OPENAI_BASE_URL=https://xiaoai.plus \
+OPENAI_MODEL=gpt-4o \
+  cargo run --example llm_smoke
+
+# 2c. Anthropic
+LLM_PROVIDER=anthropic \
+ANTHROPIC_API_KEY=sk-ant-your-key \
+  cargo run --example llm_smoke
+
+# 2d. Ollama (free, local — `ollama serve` must already be running)
+LLM_PROVIDER=ollama cargo run --example llm_smoke
+```
+
+Expected output on success:
+
+```
+╔══════════════════════════════════════════╗
+║       myExtBot — LLM smoke test           ║
+╚══════════════════════════════════════════╝
+  provider : openai
+  model    : gpt-4o
+
+Sending prompt …
+
+✅  Success!
+   model    : gpt-4o
+   reply    : myExtBot smoke test OK
+   tokens   : 15 prompt + 8 completion
+   latency  : 842 ms
+```
+
+> **Or use a `.env` file** — copy `.env.example` → `.env` and fill in your key,
+> then just run `cargo run --example llm_smoke` (the example auto-loads `.env`).
+
+Once you see `✅ Success!` your API key is working.
+
+---
+
+myExtBot is a TypeScript-based multi-agent bot framework with MCP (Model Context Protocol) service management, SLA contract enforcement, and a REST API.
+myExtBot 是一个数字分身资产体系，支持多 Agent 协作、工具调用分发与成本追踪。
+
+## 项目结构
+
+```
+src/
+├── config/
+│   └── toolCosts.ts        # 工具成本配置
+├── core/
+│   ├── types.ts            # 核心类型定义（CostEntry, CostSummary 等）
+│   ├── CostLedger.ts       # 成本账本（记录 + 查询 + 汇总）
+│   └── McpServiceListManager.ts  # 服务管理器（dispatch / dispatchAs）
+├── api/
+│   └── costRoutes.ts       # REST API 路由处理
+├── server.ts               # HTTP 服务器入口
+└── index.ts                # 演示脚本
+```
+
+## 快速开始
+
+```bash
+npm install
+npm run dev      # TypeScript 类型检查
+npm run build    # 编译到 dist/
+npm start        # 运行演示脚本（需先 build）
+npm run server   # 启动 HTTP 服务器（需先 build）
+```
+
+---
+
+## Cost Ledger
+
+**M5 资产成本账本** — 记录每次 Tool 调用的成本，提供按 Agent / Tool / 日期维度的聚合查询。
+
+**核心哲学**：每一次 Tool 调用都有成本。不知道成本的系统，是失控的系统。成本账本让每个 Agent 的「消费行为」完全透明。
+
+### 工具成本配置（`src/config/toolCosts.ts`）
+
+每个工具的成本在 `TOOL_COSTS` 对象中定义：
+
+```typescript
+import { TOOL_COSTS, calculateCost } from "./src/config/toolCosts";
+
+// 查看某工具的成本配置
+console.log(TOOL_COSTS["intelligence_search"]);
+// { costPerCall: 0.001, unit: "per-call" }
+
+// 计算一次调用的成本
+const cost = calculateCost("intelligence_search");
+// 0.001
+
+// per-char 计费工具
+const translateCost = calculateCost("translate_text", { charsProcessed: 1000 });
+// 0.001 + 1000 * 0.000001 = 0.002
+```
+
+#### 支持的计费单位
+
+| 单位 | 说明 | 示例工具 |
+|------|------|----------|
+| `per-call` | 每次调用固定成本 | `intelligence_search`, `web_scrape` |
+| `per-token` | 基础费 + token 数 × 单位价格 | （预留） |
+| `per-char` | 基础费 + 字符数 × 单位价格 | `translate_text` |
+
+#### 自定义工具成本
+
+在 `TOOL_COSTS` 中添加新条目：
+
+```typescript
+// src/config/toolCosts.ts
+export const TOOL_COSTS: Record<string, ToolCostConfig> = {
+  // ...现有配置...
+
+  // 自定义工具
+  "my_custom_tool": { costPerCall: 0.005, unit: "per-call" },
+  "my_token_tool":  { costPerCall: 0.001, unit: "per-token", unitCost: 0.000002 },
+};
+```
+
+未在 `TOOL_COSTS` 中配置的工具，默认成本为 `0`。
+
+### 使用 CostLedger
+
+```typescript
+import { McpServiceListManager } from "./src/core/McpServiceListManager";
+
+const manager = new McpServiceListManager();
+
+// 直接调用工具（agentId 为 undefined）
+await manager.dispatch({
+  toolName: "intelligence_search",
+  serviceName: "PerplexityService",
+  args: { query: "TypeScript best practices" },
+});
+
+// 以指定 Agent 身份调用工具
+await manager.dispatchAs("research-bot", {
+  toolName: "intelligence_search",
+  serviceName: "PerplexityService",
+  args: { query: "Agent cost management" },
+});
+
+// 获取今日某 Agent 的累计成本
+const dailyCost = manager.getCostLedger().getDailyCostForAgent("research-bot");
+console.log(`research-bot 今日成本: $${dailyCost}`);
+
+// 获取完整汇总报告
+const summary = manager.getCostSummary();
+console.log(summary.totalCost);        // 总成本
+console.log(summary.byAgent);          // 按 Agent 分组
+console.log(summary.byTool);           // 按 Tool 分组
+```
+
+### 成本数据持久化
+
+成本条目自动异步写入 `~/.myextbot/costs/costs-YYYY-MM-DD.jsonl`（JSON Lines 格式）。写入失败不影响主流程。
+
+### REST API
+
+启动服务器后（`npm run server`），可使用以下端点：
+
+#### `GET /api/costs`
+
+查询成本条目列表。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `agentId` | string | 按 Agent 过滤 |
+| `toolName` | string | 按工具名过滤 |
+| `date` | string | 按日期过滤（YYYY-MM-DD） |
+| `limit` | number | 返回条数上限 |
+| `offset` | number | 分页偏移 |
+
+```bash
+curl "http://localhost:3000/api/costs?agentId=research-bot&date=2024-01-15"
+# { "entries": [...], "total": 5 }
+```
+
+#### `GET /api/costs/summary`
+
+获取成本汇总报告。
+
+```bash
+curl "http://localhost:3000/api/costs/summary?agentId=research-bot"
+# {
+#   "totalCost": 0.006,
+#   "totalCalls": 2,
+#   "successfulCalls": 2,
+#   "byAgent": { "research-bot": { "cost": 0.006, "calls": 2 } },
+#   "byTool": { "intelligence_search": { "cost": 0.002, "calls": 2 } },
+#   ...
+# }
+```
+
+#### `GET /api/costs/agents`
+
+按 Agent 汇总今日成本，降序排列。
+
+```bash
+curl "http://localhost:3000/api/costs/agents"
+# [
+#   { "agentId": "research-bot", "cost": 0.006, "calls": 2 },
+#   { "agentId": "dev-bot",      "cost": 0.002, "calls": 1 }
+# ]
+```
+
+#### `GET /api/costs/tools`
+
+按 Tool 汇总今日成本，降序排列。
+
+```bash
+curl "http://localhost:3000/api/costs/tools"
+# [
+#   { "toolName": "web_crawl",          "cost": 0.005, "calls": 1 },
+#   { "toolName": "intelligence_search","cost": 0.003, "calls": 3 },
+#   { "toolName": "web_scrape",         "cost": 0.002, "calls": 1 }
+# ]
+```
+
+### 与 M8（SLA 成本守卫）的联动
+
+M8 ContractEnforcer 通过 `getCostLedger().getDailyCostForAgent(agentId)` 读取 Agent 今日累计成本，在超出预算时触发降级策略：
+
+```typescript
+// M8 示例（待实现）
+const dailyCost = manager.getCostLedger().getDailyCostForAgent("research-bot");
+if (dailyCost > contract.guarantees.maxCostPerDay) {
+  // 触发 fallback 策略
+}
+```
+**myExtBot** is a digital twin asset system that lets you dynamically equip your bot with skills (plugins) at runtime — no restarts required.
+
+---
+
+## Quick Start
+
+```bash
+npm install
+npm run dev      # Run the demo
+npm run server   # Start the REST API server
+npm run build    # Compile TypeScript
+```
+
+## Agent Contracts (SLA)
+
+Every Agent can be bound to an **SLA Contract** (`AgentContract`) that enforces runtime guarantees before and during each tool call. The `ContractEnforcer` wraps `dispatchAs()` and evaluates four types of rules:
+
+### SLA Rules
+
+| Rule | Field | Description |
+|------|-------|-------------|
+| **Timeout** | `maxResponseTimeMs` | Cancels the call if it exceeds the limit (ms). Returns `{ success: false, error: "timeout: ..." }` |
+| **Cost per call** | `maxCostPerCall` | Rejects calls where the estimated tool cost (USD) exceeds the limit |
+| **Daily cost** | `maxDailyCost` | Rejects calls when the agent's daily cumulative cost (via CostLedger/M5) exceeds the limit |
+| **Rate limit** | `maxCallsPerMinute` | Sliding-window rate limiter; rejects calls that exceed the per-minute quota |
+
+### Retry Policies
+
+| Policy | Behaviour |
+|--------|-----------|
+| `"none"` | No retry on failure (default) |
+| `"once"` | Retry once after the first failure |
+| `"exponential-backoff"` | Up to 3 retries with delays: 1 s → 2 s → 4 s |
+
+### Fallback / Degradation
+
+```typescript
+fallback: {
+  agentId: "backup-bot",        // Delegate to another agent on SLA violation
+  returnPartialResult: false,   // true = return partial output on timeout instead of error
+}
+```
+
+### Alert Thresholds
+
+```typescript
+alertThresholds: {
+  warnAt: 0.8,  // Emit console.warn when usage reaches 80% of any limit
+}
+```
+
+### Registering a Contract
+
+```typescript
+manager.registerContract({
+  agentId: "research-bot",
+  sla: {
+    maxResponseTimeMs: 5000,
+    maxCostPerCall: 0.01,
+    maxDailyCost: 0.10,
+    maxCallsPerMinute: 10,
+    retryPolicy: "once",
+  },
+  fallback: {
+    agentId: "dev-bot",
+    returnPartialResult: false,
+  },
+  alertThresholds: { warnAt: 0.8 },
+});
+```
+
+Once registered, any `manager.dispatchAs("research-bot", toolCall)` call is automatically protected.
+
+### REST API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/contracts` | List all contracts |
+| `GET` | `/api/contracts/:agentId` | Get contract for agent |
+| `POST` | `/api/contracts/:agentId` | Register/replace contract |
+| `DELETE` | `/api/contracts/:agentId` | Remove contract |
+| `POST` | `/api/contracts/:agentId/check` | Pre-check without executing (`{ toolName }`) |
+
+**Examples:**
+
+```bash
+# Register a contract
+curl -X POST http://localhost:3000/api/contracts/research-bot \
+  -H "Content-Type: application/json" \
+  -d '{"sla":{"maxResponseTimeMs":5000,"maxCallsPerMinute":10}}'
+
+# List all contracts
+curl http://localhost:3000/api/contracts
+
+# Pre-check
+curl -X POST http://localhost:3000/api/contracts/research-bot/check \
+  -H "Content-Type: application/json" \
+  -d '{"toolName":"search_web"}'
+```
+
+### Integration with M5 (CostLedger)
+
+`ContractEnforcer` accepts an optional `CostLedger` instance. When provided:
+
+- The `maxDailyCost` guard reads today's cumulative cost via `costLedger.getDailyCost(agentId)`.
+- After a successful call, the estimated tool cost is recorded via `costLedger.recordCost(agentId, cost)`.
+
+```typescript
+import { CostLedger } from "./core/CostLedger";
+import { ContractEnforcer } from "./core/ContractEnforcer";
+
+const ledger = new CostLedger();
+const enforcer = new ContractEnforcer(ledger);
+```
+
+`McpServiceListManager` creates its own `CostLedger` and `ContractEnforcer` automatically.
+npm run dev
+```
+
+---
+
+## Plugin Marketplace
+
+### Overview
+
+Skills are like phone apps: install them when you need them, uninstall them when you don't. The Plugin Marketplace lets you extend myExtBot's capabilities at runtime without touching code.
+
+### REST API
+
+All endpoints are prefixed with `/api/plugins`.
+
+| Method   | Path                        | Description                                      |
+|----------|-----------------------------|--------------------------------------------------|
+| `GET`    | `/api/plugins`              | List all marketplace plugins (with install status) |
+| `GET`    | `/api/plugins/installed`    | List only installed plugins                      |
+| `GET`    | `/api/plugins/:id`          | Get details for a single plugin                  |
+| `POST`   | `/api/plugins/:id/install`  | Install a plugin                                 |
+| `DELETE` | `/api/plugins/:id/uninstall`| Uninstall a plugin                               |
+
+#### Example — install `weather-service`
+
+```bash
+curl -X POST http://localhost:3000/api/plugins/weather-service/install
+```
+
+```json
+{
+  "success": true,
+  "message": "Plugin 'weather-service' installed successfully.",
+  "plugin": {
+    "id": "weather-service",
+    "name": "Weather Service",
+    "version": "1.0.0",
+    "installed": true,
+    "tools": [{ "name": "get_weather", ... }]
+  }
+}
+```
+
+#### Example — uninstall
+
+```bash
+curl -X DELETE http://localhost:3000/api/plugins/weather-service/uninstall
+```
+
+### `data/marketplace-index.json` Format
+
+The marketplace catalogue is a JSON array of **PluginManifest** objects:
+
+```json
+[
+  {
+    "id": "my-plugin",
+    "name": "My Plugin",
+    "version": "1.0.0",
+    "author": "you",
+    "description": "What this plugin does.",
+    "category": "Utilities",
+    "registryUrl": "local://my-plugin",
+    "executeEndpoint": "https://api.example.com/my-plugin/execute",
+    "tools": [
+      {
+        "name": "my_tool",
+        "description": "Description of the tool.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "input": { "type": "string", "description": "Input text." }
+          },
+          "required": ["input"]
+        }
+      }
+    ]
+  }
+]
+```
+
+### Adding a Custom Plugin
+
+1. Edit `data/marketplace-index.json` and add a new entry following the format above.
+2. If your plugin connects to a real external API, set `executeEndpoint` to the HTTP endpoint that accepts `{ toolName, parameters }` POST requests.
+3. Install via the REST API or programmatically:
+
+```typescript
+const installer = new PluginInstaller(manager, new PluginRegistry());
+await installer.install("my-plugin");
+```
+
+### Using `executeEndpoint`
+
+When `executeEndpoint` is set, `PluginService` forwards every tool call as an HTTP POST:
+
+```
+POST https://api.example.com/my-plugin/execute
+Content-Type: application/json
+
+{
+  "toolName": "my_tool",
+  "parameters": { "input": "hello" }
+}
+```
+
+The response body is returned as the tool result. If `executeEndpoint` is omitted, a stub result is returned (useful for local development and testing).
+
+### Persistence & Restart Recovery
+
+Installed plugins are persisted to `data/installed-plugins.json`. On the next startup, `PluginInstaller.restoreInstalled()` re-registers all previously installed plugins automatically.
+
+> **Note:** `data/installed-plugins.json` is excluded from git (user state). `data/marketplace-index.json` is committed (shared catalogue).
+
+Override the data directory with the `MYEXTBOT_DATA_DIR` environment variable:
+
+```bash
+MYEXTBOT_DATA_DIR=/custom/path npm run dev
+myExtBot — Digital Avatar Asset System (数字分身资产体系)
+
+A TypeScript framework for managing AI service agents with health monitoring,
+fallback routing, delegation logging, and plugin extensibility.
+> **Digital Avatar Asset System** — A TypeScript framework for building multi-agent pipelines where each agent owns its tools as sovereign assets.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+- [Multi-Agent Pipelines](#multi-agent-pipelines)
+- [REST API](#rest-api)
+- [Architecture Roadmap](#architecture-roadmap)
+
+---
+
+## Overview
+
+myExtBot is built around the philosophy that **Agents, Tools, and Services are digital assets you own** — not just utility functions.  Every delegation between agents is logged, every pipeline run is traceable, and every tool call is attributed to its owner.
+myExtBot is a digital avatar asset system built around a Multi-Agent Pipeline architecture.
+Each agent can delegate tool calls to other agents, and every delegation is logged for traceability.
+
+---
+
+## Asset Lineage Graph (M9)
+
+### 概念 / What is a Lineage Graph?
+
+血缘图（Lineage Graph）将每一条 `DelegationLogEntry` 转化为有向调用图。
+它把整条 Agent 调用链路从「黑盒」变成「透明玻璃」——每一步的输入输出、谁委托了谁，都清晰可见。
+
+A lineage graph turns every `DelegationLogEntry` into a directed call graph, making the full
+Agent invocation chain transparent and traceable from "black box" to "glass box".
+
+### 使用场景 / Use Cases
+
+- **调试 Pipeline 失败**：快速定位哪个 Agent/工具调用失败
+- **性能优化**：通过 `durationMs` 找出瓶颈节点
+- **审计合规**：完整记录每次 Agent 委托行为
+- **文档生成**：自动生成 GitHub Issue/PR 中的流程图
+
+### Quick Start
+
+```typescript
+import { McpServiceListManager } from "./core/McpServiceListManager";
+
+const manager = new McpServiceListManager();
+// ... register services ...
+
+// Generate some delegations
+await manager.delegateAs("full-agent", "research-bot", {
+  toolName: "search_web",
+  arguments: { query: "lineage graph patterns" }
+});
+
+// Build and export the graph
+const graph = manager.buildLineageGraph();
+console.log(graph.nodeCount, graph.edgeCount);
+
+const mermaid = manager.exportLineageMermaid();
+console.log(mermaid);
+// graph LR
+//   agent_full-agent["full-agent"] --> |委托| agent_research-bot["research-bot"]
+//   ...
+myExtBot is a digital avatar (数字分身) asset system built on TypeScript/Node.js.
+It models **Scenes** — named collections of services — and provides a trigger
+engine that automatically recommends the most relevant Scene based on runtime
+context.
+
+---
+
+## Getting Started
+
+```bash
+npm install
+npm run dev     # runs src/index.ts (demo)
+npm run build   # compile TypeScript → dist/
+npm start       # start the REST server
+```
+
+---
+
+## Scene Triggers
+
+**M7 — Responsive Scene Auto-Detection**
+
+Users should never have to manually switch modes. The `SceneTriggerEngine`
+evaluates each Scene's declared trigger conditions against the current runtime
+context and surfaces the best match automatically.
+
+### Trigger Types
+
+| Type | Description | Key field(s) |
+|------|-------------|--------------|
+| `keyword` | Fires when the user's input contains one or more of the listed keywords (case-insensitive). | `keywords: string[]` |
+| `time` | Fires when the current local time falls within a HH:MM range. Supports overnight ranges (e.g. `22:00`–`06:00`). | `timeRange: { start, end }` |
+| `agent` | Fires when a specific Agent is currently being invoked. | `agentId: string` |
+| `health` | Fires when the service health map satisfies a condition. | `condition: "any-service-down" \| "all-services-healthy"` |
+
+### Trigger Weights
+
+Weights control how confidently a trigger recommends a Scene.
+The final score for a Scene is the sum of weights of all matching triggers.
+
+| Trigger type | Weight | Rationale |
+|---|---|---|
+| `health` | **4** | System anomalies are highest priority |
+| `keyword` | **3** | Most direct expression of user intent |
+| `agent` | **2** | Current agent provides strong context |
+| `time` | **1** | Background condition, lowest priority |
+
+### TriggerContext Fields
+
+```typescript
+interface TriggerContext {
+  userInput?:      string;                          // for keyword triggers
+  currentTime?:    string;                          // HH:MM, defaults to now
+  activeAgentId?:  string;                          // for agent triggers
+  serviceHealths?: Record<string, ServiceHealth>;   // for health triggers
+}
+```
+
+### Registering a Scene with Triggers
+
+```typescript
+manager.registerScene({
+  id: "research-triggered",
+  name: "Research (with triggers)",
+  description: "Auto-activates when user wants to search for information.",
+  serviceNames: ["SearchService"],
+  triggers: [
+    { type: "keyword", keywords: ["搜索", "search", "find", "research"] },
+    { type: "time",    timeRange: { start: "08:00", end: "20:00" } },
+  ],
+});
+```
+
+### Programmatic Auto-Detection
+
+```typescript
+// All matching scenes (ranked by score)
+const suggestions = manager.autoDetectScene({ userInput: "帮我搜索一下" });
+// → [{ sceneId: "research-triggered", score: 3, matchedTriggers: [...] }]
+
+// Single best match
+const best = manager.bestSceneForContext({ userInput: "search for news" });
+// → "research-triggered"
+```
+
+### REST API
+
+Start the server:
+```bash
+npm run server
+```
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/lineage` | GET | Full graph (JSON by default; `?format=mermaid` or `?format=dot`) |
+| `/api/lineage/mermaid` | GET | Mermaid flowchart text (`text/plain`) |
+| `/api/lineage/summary` | GET | Summary statistics |
+
+#### Example: Get Mermaid graph for a time range
+
+```bash
+curl "http://localhost:3000/api/lineage/mermaid?startTime=2024-01-01T00:00:00Z&endTime=2024-12-31T23:59:59Z"
+```
+
+#### Example: Summary
+
+```bash
+curl "http://localhost:3000/api/lineage/summary"
+# {
+#   "totalNodes": 5,
+#   "totalEdges": 6,
+#   "agentNodes": ["full-agent", "research-bot", "dev-bot"],
+#   "toolNodes": ["search_web", "run_code"],
+#   "successRate": 1,
+#   "timeRange": { "earliest": "...", "latest": "..." }
+# }
+```
+
+### Embed Mermaid in GitHub Issues / Markdown
+
+Paste the output of `/api/lineage/mermaid` into a GitHub Issue or Markdown file:
+
+````markdown
+```mermaid
+graph LR
+  agent_full-agent["full-agent"] --> |委托| agent_research-bot["research-bot"]
+  agent_research-bot["research-bot"] --> |search_web| tool_search_web("🔧 search_web")
+  tool_search_web("🔧 search_web") --> |✓| agent_full-agent["full-agent"]
+```
+````
+
+GitHub will automatically render it as an interactive diagram.
+
+### 关联模块 / Related Modules
+
+- 📎 **M1（DelegationLog 持久化）**：血缘图的数据来源——没有持久化的 Log 就没有可重放的血缘图
+- 📎 **M3（Multi-Agent Pipeline）**：Pipeline 的链式调用天然形成树状血缘图，是最直接的可视化场景
+
+### Export Formats
+
+| Format | Method | Description |
+|--------|--------|-------------|
+| JSON | `exportLineageJSON()` | Structured graph data for frontend rendering |
+| Mermaid | `exportLineageMermaid()` | Paste directly into GitHub/MD for rendering |
+| DOT | `exportLineageDOT()` | Graphviz format for advanced visualization |
+#### `POST /api/scenes/auto-detect`
+
+Returns all Scenes that match the provided context, ranked by score.
+
+```bash
+curl -X POST http://localhost:3000/api/scenes/auto-detect \
+  -H "Content-Type: application/json" \
+  -d '{ "userInput": "帮我搜索最新AI新闻" }'
+```
+
+Response:
+
+```json
+[
+  {
+    "sceneId": "research-triggered",
+    "sceneName": "Research (with triggers)",
+    "matchedTriggers": [
+      { "type": "keyword", "reason": "关键词匹配: 搜索, 最新" },
+      { "type": "time",    "reason": "时间范围匹配: 08:00 – 20:00 (当前 09:30)" }
+    ],
+    "score": 4
+  }
+]
+```
+
+#### `POST /api/scenes/best-match`
+
+Returns only the single highest-scoring match (or `null` if nothing matches).
+
+```bash
+curl -X POST http://localhost:3000/api/scenes/best-match \
+  -H "Content-Type: application/json" \
+  -d '{ "userInput": "search for latest news" }'
+```
+
+Response:
+
+```json
+{
+  "sceneId": "research-triggered",
+  "result": {
+    "sceneId": "research-triggered",
+    "sceneName": "Research (with triggers)",
+    "matchedTriggers": [...],
+    "score": 4
+  }
+}
+```
+
+### Relationship with Other Modules
+
+| Module | Integration |
+|--------|-------------|
+| **M4 — 资产健康度** | `health` triggers read the service health status map from HealthMonitor |
+| **M6 — 分身意图声明** | `keyword` triggers share vocabulary-matching logic with AgentRouter |
+| **M10 — 分身生命周期** | Agent state changes can be fed as `activeAgentId` context to trigger scene switches |
+
+---
+
+## Architecture
+
+```
+src/
+├── core/
+│   ├── types.ts              — ToolCall, ToolResult, AgentContract, ContractCheckResult
+│   ├── CostLedger.ts         — M5: per-agent daily cost tracking
+│   ├── ContractEnforcer.ts   — M8: SLA enforcement (timeout, cost, rate, retry, fallback)
+│   └── McpServiceListManager.ts — orchestrates services, contracts, and dispatch
+├── services/
+│   ├── BaseService.ts        — abstract base for all services
+│   └── SearchService.ts      — stub search service for demo
+├── api/
+│   └── contractRoutes.ts     — Express router for /api/contracts
+├── server.ts                 — Express server entry point
+└── index.ts                  — Demo / CLI entry point
+│   ├── types.ts                  # Scene, SceneTrigger, TriggerContext, SceneTriggerResult
+│   ├── SceneTriggerEngine.ts     # Trigger evaluation logic + scoring
+│   └── McpServiceListManager.ts  # Scene registry + autoDetectScene / bestSceneForContext
+├── api/
+│   └── sceneTriggerRoutes.ts     # Express routes: /api/scenes/auto-detect, /api/scenes/best-match
+├── server.ts                     # Express app setup + demo scene registration
+└── index.ts                      # CLI demo (npm run dev)
+myExtBot is a **digital-persona asset system** built around the concept that an Agent is not just a set of permissions — it is a persona with character, expertise, and intent.
+
+---
+
+## Quick Start
+
+```bash
+npm install
+npm run dev    # run the demo
+npm run build  # TypeScript compile check
+```
+
+---
+
+## Service Health Monitoring (M4)
+
+### Overview
+
+Every external API can fail, be rate-limited, or become unavailable.
+The M4 health monitoring layer gives every Service a **visible health status**
+and automatically routes calls to a fallback Service when a primary Service is
+unhealthy — ensuring system resilience.
+
+### 5 Health States
+
+| State | Meaning | Callable? |
+|---|---|---|
+| `unknown` | No calls recorded yet (initial state after `register()`) | ✅ Yes |
+| `healthy` | API responding normally | ✅ Yes |
+| `degraded` | 3–4 consecutive failures — reduced confidence but still usable | ✅ Yes |
+| `down` | 5+ consecutive failures — calls suspended | ❌ No |
+| `rate-limited` | HTTP 429 received — waiting for `rateLimitResetAt` | ❌ No |
+
+### State Transition Rules
+
+```
+register()         → "unknown"
+recordSuccess()    → "healthy"  (resets consecutiveFailures to 0)
+recordFailure()    (non-429):
+  consecutiveFailures < 3   → stays "healthy" (transient errors don't degrade)
+  consecutiveFailures >= 3  → "degraded"
+  consecutiveFailures >= 5  → "down"
+recordFailure()    (429 / "rate limit"):
+  → "rate-limited" + sets rateLimitResetAt (Retry-After seconds)
+checkRateLimitRecovery() called before every dispatch:
+  if rateLimitResetAt < now → auto-recover to "healthy"
+```
+
+### Automatic Fallback Routing
+
+Configure `fallbackServiceName` on any `BaseService` subclass:
+
+```typescript
+export class PerplexityService extends BaseService {
+  readonly name = "PerplexityService";
+  fallbackServiceName = "SearchService";   // ← fallback when "down" / "rate-limited"
+  // ...
+}
+```
+
+When `McpServiceListManager.dispatch("PerplexityService", payload)` is called
+and `PerplexityService` is `"down"` or `"rate-limited"`, the manager
+automatically routes to `"SearchService"` and logs a warning.
+
+If no fallback is configured and the service is not callable, dispatch returns:
+
+```json
+{ "success": false, "error": "Service \"X\" is down, no fallback available." }
+```
+
+### REST API
+
+Mount the health routes on your Express app:
+
+```typescript
+import { mountHealthRoutes } from "./api/healthRoutes";
+mountHealthRoutes(app, manager);
+```
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | All `ServiceHealthRecord[]` |
+| `GET` | `/api/health/:serviceName` | Single record |
+| `POST` | `/api/health/:serviceName/reset` | Reset to `"healthy"` (ops) |
+
+Example response for `GET /api/health/PerplexityService`:
+
+```json
+{
+  "serviceName": "PerplexityService",
+  "health": "degraded",
+  "lastCheckedAt": "2026-03-12T08:00:00.000Z",
+  "consecutiveFailures": 3,
+  "lastError": "503 Service Unavailable",
+  "totalCalls": 10,
+  "totalSuccesses": 7,
+  "successRate": 0.7
+}
+```
+
+### Programmatic API
+
+```typescript
+const manager = new McpServiceListManager();
+manager.register(new PerplexityService());
+
+// Health queries
+manager.getServiceHealth("PerplexityService");  // ServiceHealthRecord
+manager.getAllServiceHealths();                  // ServiceHealthRecord[]
+
+// Ops reset
+manager.resetServiceHealth("PerplexityService");
+```
+
+### Integration with Other Milestones
+
+| Milestone | Integration |
+|-----------|-------------|
+| **M10 — Agent Lifecycle** | When a Service is persistently `"down"`, the owning Agent can transition `active → sleeping` |
+| **M8 — Agent SLA** | Timeout failures increment `consecutiveFailures`; SLA violations are tracked alongside health |
+| **M7 — Scene Triggers** | A `health` trigger type reads health state to automatically switch Scenes |
+
+---
+
+## Current Status
+
+> See [PROGRESS.md](PROGRESS.md) for a full breakdown of what is complete, what is a placeholder, and what comes next.
+
+| Layer | Status |
+|-------|--------|
+| Agent FSM (9 states) | ✅ Complete |
+| LLM client (OpenAI-compatible) | ✅ Complete |
+| Planner (prompt → AgentPlan) | ✅ Complete |
+| Executor (plan → tool calls) | ✅ Complete |
+| Plan approval UI (`PlanApprovalModal`) | ✅ Complete |
+| Tool call approval UI (`ApprovalModal`) | ✅ Complete |
+| Audit DB (5 tables + LLM call log) | ✅ Complete |
+| `fs.readFile` | ✅ Implemented |
+| `cmd.run` | ✅ Implemented |
+| `fs.applyPatch` | 🔶 Placeholder |
+| `net.fetch` | 🔶 Placeholder |
+| `desktop.*` (screenshot, OCR, click) | 🔶 Placeholder |
+| Config allowlists from `config.toml` | ⬜ Not wired |
+| Playwright browser sidecar | 🔶 Scaffold only |
+| Credential Vault | ⬜ Not started |
+| Streaming LLM output | ⬜ Not started |
+| Persistent audit DB (on-disk) | ⬜ In-memory only |
+
+---
+
 ## Architecture
 
 ```
 apps/desktop/          ← Tauri app (Rust + React)
-  src-tauri/           ← Rust: event bus, agent state machine, tools, audit
+  src-tauri/           ← Rust: LLM client, Planner, Executor, FSM, tools, audit
   src/                 ← React UI: Chat, Plan, Approval, Audit, EmergencyStop
 services/
   playwright-sidecar/  ← Node.js WebSocket JSON-RPC browser automation server
@@ -895,8 +1852,12 @@ copy config.example.toml config.toml
 # Edit config.toml and set your LLM/OCR API keys
 # Set environment variables:
 $env:MYEXTBOT_LLM_API_KEY = "sk-..."
-$env:MYEXTBOT_OCR_API_KEY = "sk-..."
+$env:MYEXTBOT_LLM_BASE_URL = "https://api.openai.com/v1"   # optional; default shown
+$env:MYEXTBOT_LLM_MODEL    = "gpt-4o"                      # optional; default shown
 ```
+
+> **No API key?** `send_message` degrades gracefully: the agent transitions to
+> `Failed` and shows an error in the chat panel — no panic.
 
 ### 3. Start the Playwright sidecar
 
@@ -919,28 +1880,33 @@ npm run dev:desktop
 ```
 apps/
   desktop/
-    src/                     # React UI
+    src/                        # React UI
       components/
         ChatPanel.tsx
         PlanPanel.tsx
-        ApprovalModal.tsx
+        ApprovalModal.tsx       # Tool-call approval modal
+        PlanApprovalModal.tsx   # Plan approval modal (new)
         AuditTimeline.tsx
+        AgentLogPanel.tsx
         EmergencyStop.tsx
       hooks/
         useEventStream.ts
       models/
-        events.ts
+        events.ts               # Shared TypeScript types
     src-tauri/
       src/
         main.rs
         lib.rs
-        events.rs            # Typed event model
-        agent.rs             # State machine
-        commands.rs          # Tauri IPC commands
-        permissions.rs       # Allowlist + session cache
-        audit.rs             # SQLite audit logging
+        events.rs               # Typed event model (AgentEvent enum)
+        agent.rs                # 9-state FSM + oneshot approval channels
+        commands.rs             # Tauri IPC commands
+        llm.rs                  # OpenAI-compatible LLM client (new)
+        planner.rs              # Planner: prompt → AgentPlan (new)
+        executor.rs             # Executor: plan → tool dispatch (new)
+        permissions.rs          # Allowlist + session cache
+        audit.rs                # SQLite audit logging (5 tables)
         tools/
-          mod.rs             # Registry + schema validation
+          mod.rs                # Registry + JSON schema validation
           fs.rs
           cmd.rs
           net.rs
@@ -950,7 +1916,7 @@ apps/
 services/
   playwright-sidecar/
     src/
-      index.ts               # WebSocket JSON-RPC server
+      index.ts                  # WebSocket JSON-RPC server (scaffold)
     package.json
     tsconfig.json
 docs/
@@ -958,6 +1924,7 @@ docs/
   permissions.md
   tools.md
   audit.md
+PROGRESS.md                     # Detailed completion status
 config.example.toml
 ```
 
@@ -969,15 +1936,17 @@ config.example.toml
 - [Permissions](docs/permissions.md)
 - [Tools](docs/tools.md)
 - [Audit Logging](docs/audit.md)
+- [Progress / Roadmap](PROGRESS.md)
 
 ---
 
 ## Security
 
 - **No secrets in source**: use `config.toml` (gitignored) and environment variables.
+- **API key zeroized**: `ApiKey` wrapper clears memory on drop (`zeroize` crate).
 - **Tool allowlists**: tools are gated by allowlist before the approval dialog.
 - **Structured commands**: `cmd.run` uses program+args, never shell expansion.
-- **Audit trail**: every tool call is logged with approval status.
+- **Audit trail**: every tool call and LLM call is logged with approval status.
 
 ---
 
