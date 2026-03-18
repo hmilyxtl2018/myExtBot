@@ -14,6 +14,88 @@ A Windows-first "digital twin" desktop bot inspired by Cline. Built with:
 - **SQLite** audit log (all events, tool calls, LLM calls, and artifacts)
 - **Planner + Executor** dual-layer LLM architecture
 - **Permissioned tool execution**: every tool call requires user approval
+
+---
+
+## 🖼 Screenshots
+
+### 💬 Chat — Solo Bot mode
+> Chat with your personal AI agent; the sidebar shows live agent status, the current plan, and any pending tool-approval requests.
+
+![Chat view](https://github.com/user-attachments/assets/941afd7f-5879-425a-afa1-93334124040f)
+
+### 🗂 Team Board — multi-agent collaboration
+> Kanban board (Pending / In Progress / Done) shared across the agent fleet, plus a live inter-agent message feed on the right.
+
+![Team Board view](https://github.com/user-attachments/assets/e96973c2-9838-4831-8328-d79a6581e5f1)
+
+### 📋 Audit Log
+> Every model call, tool execution, and permission decision is recorded in SQLite and shown here in paginated, filterable rows.
+
+![Audit Log view](https://github.com/user-attachments/assets/99f32fdb-934b-4982-8a3c-622b6b7392c0)
+
+### 🔍 Intelligence Watch
+> Domain signal feed — the bot periodically scans configured sources and surfaces ranked, colour-coded insights.
+
+![Intel Watch view](https://github.com/user-attachments/assets/47b72fb4-e5ff-43b3-bef1-0c84fad46986)
+
+---
+
+## ⚡ Quick API test (no GUI needed)
+
+Want to verify your API key works **before** building the full desktop app?
+The `llm_smoke` example runs the complete LLM pipeline from the command line in seconds —
+only **Rust / Cargo** is required (no Node.js, no GTK libraries, no Tauri GUI).
+
+```bash
+# 1. Clone and enter the Rust crate
+git clone https://github.com/<your-username>/myExtBot.git
+cd myExtBot/apps/desktop/src-tauri
+
+# 2a. OpenAI (or any OpenAI-compatible proxy, e.g. xiaoai.plus)
+OPENAI_API_KEY=sk-your-key \
+  cargo run --example llm_smoke
+
+# 2b. With a proxy (e.g. xiaoai.plus with any supported model)
+OPENAI_API_KEY=sk-your-key \
+OPENAI_BASE_URL=https://xiaoai.plus \
+OPENAI_MODEL=gpt-4o \
+  cargo run --example llm_smoke
+
+# 2c. Anthropic
+LLM_PROVIDER=anthropic \
+ANTHROPIC_API_KEY=sk-ant-your-key \
+  cargo run --example llm_smoke
+
+# 2d. Ollama (free, local — `ollama serve` must already be running)
+LLM_PROVIDER=ollama cargo run --example llm_smoke
+```
+
+Expected output on success:
+
+```
+╔══════════════════════════════════════════╗
+║       myExtBot — LLM smoke test           ║
+╚══════════════════════════════════════════╝
+  provider : openai
+  model    : gpt-4o
+
+Sending prompt …
+
+✅  Success!
+   model    : gpt-4o
+   reply    : myExtBot smoke test OK
+   tokens   : 15 prompt + 8 completion
+   latency  : 842 ms
+```
+
+> **Or use a `.env` file** — copy `.env.example` → `.env` and fill in your key,
+> then just run `cargo run --example llm_smoke` (the example auto-loads `.env`).
+
+Once you see `✅ Success!` your API key is working.
+
+---
+
 myExtBot is a TypeScript-based multi-agent bot framework with MCP (Model Context Protocol) service management, SLA contract enforcement, and a REST API.
 myExtBot 是一个数字分身资产体系，支持多 Agent 协作、工具调用分发与成本追踪。
 
