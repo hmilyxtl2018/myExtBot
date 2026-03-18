@@ -1,4 +1,15 @@
 {
+  "name": "myextbot-workspace",
+  "private": true,
+  "workspaces": [
+    "apps/desktop",
+    "services/playwright-sidecar"
+  ],
+  "scripts": {
+    "dev:sidecar": "npm --workspace=services/playwright-sidecar run dev",
+    "build:sidecar": "npm --workspace=services/playwright-sidecar run build",
+    "dev:desktop": "npm --workspace=apps/desktop run tauri:dev",
+    "build:desktop": "npm --workspace=apps/desktop run tauri:build"
   "name": "myextbot",
   "version": "1.0.0",
   "description": "",
