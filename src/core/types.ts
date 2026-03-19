@@ -740,6 +740,11 @@ export interface PluginManifest {
    * Optional HTTP endpoint for tool-call requests.
    */
   executeEndpoint?: string;
+  /**
+   * Request timeout in milliseconds for HTTP calls to `executeEndpoint`.
+   * Defaults to 30 000 ms when not set.
+   */
+  timeout?: number;
 }
 
 /** Installation state of a plugin. */
