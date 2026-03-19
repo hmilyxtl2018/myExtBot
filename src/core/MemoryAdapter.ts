@@ -26,6 +26,8 @@ export interface KnowledgeEntry {
   content: string;
   confidence: number;
   createdAt: string;
+  /** ISO timestamp after which this entry may be purged by autoRetire. */
+  expiresAt?: string;
   tags?: string[];
 }
 
@@ -106,6 +108,9 @@ export class MemoryAdapter {
    * Extract a knowledge trace from execution result and store in K-DB.
    * Returns the entry if stored, or null if knowledge DB is disabled or
    * confidence is below the auto-promote threshold.
+   *
+   * When a `KnowledgeDbStore` is injected, also runs lazy autoRetire cleanup
+   * based on `autoRetireAfterMinutes` config.
    */
   extractTrace(
     agentId: string,
@@ -117,12 +122,18 @@ export class MemoryAdapter {
     const config = agent?.memory?.knowledgeDb;
     if (!config?.enabled) return null;
 
+    const now = new Date();
+    const expiresAt = config.autoRetireAfterMinutes !== undefined
+      ? new Date(now.getTime() + config.autoRetireAfterMinutes * 60_000).toISOString()
+      : undefined;
+
     const entry: KnowledgeEntry = {
       id: `kdb-${agentId}-${Date.now()}`,
       agentId,
       content,
       confidence,
-      createdAt: new Date().toISOString(),
+      createdAt: now.toISOString(),
+      expiresAt,
       tags,
     };
 
@@ -134,6 +145,8 @@ export class MemoryAdapter {
       confidence >= config.autoPromoteThreshold;
     if (shouldPromote) {
       if (this.store) {
+        // Lazy cleanup: purge expired entries before inserting the new one.
+        this.store.deleteExpired(agentId);
         this.store.insert(agentId, entry);
         const maxEntries = config.maxEntries ?? 1000;
         this.store.prune(agentId, maxEntries);

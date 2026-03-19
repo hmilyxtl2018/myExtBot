@@ -417,4 +417,124 @@ describe("MemoryAdapter", () => {
       expect(results[0].content).toBe("in-memory content");
     });
   });
+
+  // ── autoRetireAfterMinutes / expiresAt ────────────────────────────────────
+
+  describe("autoRetireAfterMinutes (SQLite)", () => {
+    let store: KnowledgeDbStore;
+
+    beforeEach(() => {
+      store = new KnowledgeDbStore();
+      store.init(":memory:");
+    });
+
+    afterEach(() => {
+      store.close();
+    });
+
+    it("sets expiresAt on the entry when autoRetireAfterMinutes is configured", () => {
+      const agent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true, autoRetireAfterMinutes: 60 } },
+      };
+      const mgr = makeMockManager([agent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager, store);
+
+      const before = new Date();
+      const entry = adapter.extractTrace("bot", "expiring content", 0.9);
+      const after = new Date();
+
+      expect(entry).not.toBeNull();
+      expect(entry!.expiresAt).toBeDefined();
+      const expiresAt = new Date(entry!.expiresAt!);
+      expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before.getTime() + 60 * 60_000 - 100);
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(after.getTime() + 60 * 60_000 + 100);
+    });
+
+    it("does not set expiresAt when autoRetireAfterMinutes is not configured", () => {
+      const agent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true } },
+      };
+      const mgr = makeMockManager([agent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager, store);
+
+      const entry = adapter.extractTrace("bot", "permanent content", 0.9);
+      expect(entry).not.toBeNull();
+      expect(entry!.expiresAt).toBeUndefined();
+    });
+
+    it("lazy autoRetire removes expired entries on next extractTrace call", () => {
+      const agent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true } },
+      };
+      const mgr = makeMockManager([agent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager, store);
+
+      // Directly insert a pre-expired entry into the store (bypasses MemoryAdapter TTL).
+      const pastExpiry = new Date(Date.now() - 10_000).toISOString();
+      store.insert("bot", {
+        id: "kdb-bot-old",
+        agentId: "bot",
+        content: "old expired content",
+        confidence: 0.9,
+        createdAt: new Date(Date.now() - 20_000).toISOString(),
+        expiresAt: pastExpiry,
+      });
+
+      // Sanity check: entry is present before cleanup.
+      expect(store.query("bot", "old expired", 10)).toHaveLength(1);
+
+      // Calling extractTrace triggers lazy deleteExpired internally.
+      adapter.extractTrace("bot", "new content", 0.9);
+
+      // Expired entry should now be gone.
+      const results = store.query("bot", "", 100);
+      expect(results.every((r) => r.content !== "old expired content")).toBe(true);
+    });
+  });
+
+  // ── McpServiceListManager auto-injection ─────────────────────────────────
+
+  describe("McpServiceListManager auto-injection", () => {
+    it("exposes a memoryAdapter backed by a KnowledgeDbStore", () => {
+      process.env["KNOWLEDGE_DB_PATH"] = ":memory:";
+      const { McpServiceListManager } = require("../McpServiceListManager") as {
+        McpServiceListManager: new () => import("../McpServiceListManager").McpServiceListManager;
+      };
+      const mgr = new McpServiceListManager();
+      expect(mgr.memoryAdapter).toBeDefined();
+      mgr.close();
+      delete process.env["KNOWLEDGE_DB_PATH"];
+    });
+
+    it("memoryAdapter stores and retrieves entries end-to-end", () => {
+      process.env["KNOWLEDGE_DB_PATH"] = ":memory:";
+      const { McpServiceListManager } = require("../McpServiceListManager") as {
+        McpServiceListManager: new () => import("../McpServiceListManager").McpServiceListManager;
+      };
+      const mgr = new McpServiceListManager();
+
+      // Register an agent with knowledgeDb enabled.
+      mgr.registerAgent({
+        id: "e2e-bot",
+        name: "E2E Bot",
+        memory: { knowledgeDb: { enabled: true } },
+      });
+
+      const entry = mgr.memoryAdapter.extractTrace("e2e-bot", "end-to-end content", 0.9);
+      expect(entry).not.toBeNull();
+
+      const found = mgr.memoryAdapter.lookupSimilar("e2e-bot", "end-to-end", 5);
+      expect(found).toHaveLength(1);
+      expect(found[0].content).toBe("end-to-end content");
+
+      mgr.close();
+      delete process.env["KNOWLEDGE_DB_PATH"];
+    });
+  });
 });

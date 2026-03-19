@@ -36,6 +36,8 @@ import { CommunicationBridge } from "./CommunicationBridge";
 import { LineageGraphBuilder } from "./LineageGraphBuilder";
 import { LineageExporter } from "./LineageExporter";
 import { validateAgentSpec } from "./AgentSpecValidator";
+import { KnowledgeDbStore } from "./KnowledgeDbStore";
+import { MemoryAdapter } from "./MemoryAdapter";
 
 /**
  * McpServiceListManager is the single source of truth for all MCP services and
@@ -80,6 +82,36 @@ export class McpServiceListManager {
 
   /** Pillar 7: Communication Bridge for inter-agent messaging. */
   communicationBridge = new CommunicationBridge(this);
+
+  /** Pillar 9: Knowledge DB store (SQLite-backed). Initialised in constructor. */
+  private knowledgeStore = new KnowledgeDbStore();
+
+  /** Pillar 9: Memory adapter — wraps knowledgeStore for K-DB operations. */
+  memoryAdapter: MemoryAdapter;
+
+  constructor() {
+    /**
+     * Determine the SQLite path from the environment variable
+     * `KNOWLEDGE_DB_PATH` (default: `./data/knowledge.db`).
+     */
+    const rawPath = process.env["KNOWLEDGE_DB_PATH"] ?? "./data/knowledge.db";
+    this.knowledgeStore.init(rawPath);
+    this.memoryAdapter = new MemoryAdapter(this, this.knowledgeStore);
+
+    // Close the DB gracefully on process exit.
+    const closeStore = () => { this.knowledgeStore.close(); };
+    process.once("exit", closeStore);
+    process.once("SIGINT", () => { closeStore(); process.exit(130); });
+    process.once("SIGTERM", () => { closeStore(); process.exit(143); });
+  }
+
+  /**
+   * Explicitly close the underlying KnowledgeDbStore connection.
+   * Call this when you control the lifecycle and do not rely on process exit.
+   */
+  close(): void {
+    this.knowledgeStore.close();
+  }
 
   // ── Service management ────────────────────────────────────────────────────
 
