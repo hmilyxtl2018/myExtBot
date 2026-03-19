@@ -2,7 +2,7 @@ name: Deploy Demo to GitHub Pages
 
 "on":
   push:
-    branches: [main, "copilot/**"]
+    branches: [main]
   workflow_dispatch:
 
 # Allow one concurrent deployment

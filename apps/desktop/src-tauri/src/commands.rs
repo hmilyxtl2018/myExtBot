@@ -12,14 +12,23 @@ use crate::permissions::PermissionManager;
 /// Send a user chat message and kick off the agent.
 ///
 /// Immediately echoes the user message as a `ChatMessage` event and transitions
-/// the agent to `Thinking`.  The actual LLM call is spawned on a background
-/// Tokio task so the IPC call returns quickly; the response arrives as a second
-/// `ChatMessage` event emitted by the background task.
+/// the agent to `Thinking`.  The actual work is spawned on a background Tokio
+/// task so the IPC call returns quickly.
+///
+/// # Flow
+/// 1. Echo user message → emit `ChatMessage`.
+/// 2. Call [`crate::planner::plan`] to generate a `Vec<PlanStep>` from the
+///    user's input.
+/// 3. Emit `AgentEvent::PlanUpdated` with the full plan.
+/// 4. Iterate over steps, calling [`crate::executor::execute_step`] for each.
+///    Steps without a tool are executed immediately (LLM call); steps *with* a
+///    tool emit a `ToolCallRequest` and pause — the actual execution happens
+///    when the user accepts via `approve_tool_call`.
+/// 5. After all tool-less steps complete, transition to `Completed`.
 #[tauri::command]
 pub async fn send_message(
     content: String,
     agent: State<'_, AgentState>,
-    db: State<'_, AuditDb>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let msg_id = uuid::Uuid::new_v4().to_string();
@@ -38,44 +47,87 @@ pub async fn send_message(
         .transition(AgentStatus::Thinking)
         .map_err(|e| e.to_string())?;
 
-    // Log that an LLM call is about to start (tokens filled in on completion).
-    let _ = db.log_model_usage("pending", 0, 0, 0);
-
-    // Spawn the LLM call so the IPC thread is not blocked.
+    // Spawn the planning + execution pipeline so the IPC call returns immediately.
     tokio::spawn(async move {
         let agent = app_handle.state::<AgentState>();
         let db    = app_handle.state::<AuditDb>();
 
-        match crate::llm::complete(&content).await {
-            Ok(resp) => {
-                let _ = db.log_model_usage(
-                    &resp.model,
-                    resp.prompt_tokens,
-                    resp.completion_tokens,
-                    resp.duration_ms,
-                );
-                let reply = ChatMessage {
-                    id:        uuid::Uuid::new_v4().to_string(),
-                    role:      "assistant".into(),
-                    content:   resp.text,
-                    timestamp: chrono::Utc::now(),
-                };
-                let _ = agent.emit(AgentEvent::ChatMessage { message: reply });
-                let _ = agent.transition(AgentStatus::Completed);
-            }
+        // ── 1. Plan ───────────────────────────────────────────────────────────
+        let steps = match crate::planner::plan(&content).await {
+            Ok(s) => s,
             Err(e) => {
-                tracing::error!("LLM error: {e}");
-                // Emit the error as a chat message so the user sees it.
+                tracing::error!("Planner error: {e}");
                 let err_msg = ChatMessage {
                     id:        uuid::Uuid::new_v4().to_string(),
                     role:      "assistant".into(),
-                    content:   format!("⚠️ {e}"),
+                    content:   format!("⚠️ Planning failed: {e}"),
                     timestamp: chrono::Utc::now(),
                 };
                 let _ = agent.emit(AgentEvent::ChatMessage { message: err_msg });
                 let _ = agent.transition(AgentStatus::Failed);
+                return;
+            }
+        };
+
+        // ── 2. Broadcast the plan to the frontend ─────────────────────────────
+        let _ = agent.emit(AgentEvent::PlanUpdated { steps: steps.clone() });
+
+        // ── 3. Execute each step ──────────────────────────────────────────────
+        // Use a single mutable vector as the source of truth for step state.
+        let mut updated_steps = steps;
+        for i in 0..updated_steps.len() {
+            updated_steps[i].status = crate::events::PlanStepStatus::Running;
+            let _ = agent.emit(AgentEvent::PlanUpdated { steps: updated_steps.clone() });
+
+            // Clone only the data needed to call execute_step without holding
+            // a borrow on updated_steps across the await point.
+            let step_snapshot = updated_steps[i].clone();
+
+            match crate::executor::execute_step(&step_snapshot, &agent, &db).await {
+                Ok(result) => {
+                    updated_steps[i].result = Some(result.output.clone());
+
+                    if step_snapshot.tool.is_some() {
+                        // Tool step: we have emitted ToolCallRequest and paused.
+                        // Leave the step in `Running` status; it will be
+                        // finalised by approve_tool_call / deny_tool_call.
+                        let _ = agent.emit(AgentEvent::PlanUpdated { steps: updated_steps.clone() });
+                        // Do not process further steps until the user responds.
+                        return;
+                    }
+
+                    // Tool-less step completed — mark as done and continue.
+                    updated_steps[i].status = crate::events::PlanStepStatus::Done;
+                    let _ = agent.emit(AgentEvent::PlanUpdated { steps: updated_steps.clone() });
+
+                    // Echo the LLM reply as a chat message so the user sees it.
+                    let reply = ChatMessage {
+                        id:        uuid::Uuid::new_v4().to_string(),
+                        role:      "assistant".into(),
+                        content:   result.output,
+                        timestamp: chrono::Utc::now(),
+                    };
+                    let _ = agent.emit(AgentEvent::ChatMessage { message: reply });
+                }
+                Err(e) => {
+                    tracing::error!("Executor step {} error: {e}", step_snapshot.index + 1);
+                    updated_steps[i].status = crate::events::PlanStepStatus::Failed;
+                    let _ = agent.emit(AgentEvent::PlanUpdated { steps: updated_steps.clone() });
+                    let err_msg = ChatMessage {
+                        id:        uuid::Uuid::new_v4().to_string(),
+                        role:      "assistant".into(),
+                        content:   format!("⚠️ Step {} failed: {e}", step_snapshot.index + 1),
+                        timestamp: chrono::Utc::now(),
+                    };
+                    let _ = agent.emit(AgentEvent::ChatMessage { message: err_msg });
+                    let _ = agent.transition(AgentStatus::Failed);
+                    return;
+                }
             }
         }
+
+        // ── 4. All steps done ─────────────────────────────────────────────────
+        let _ = agent.transition(AgentStatus::Completed);
     });
 
     Ok(())

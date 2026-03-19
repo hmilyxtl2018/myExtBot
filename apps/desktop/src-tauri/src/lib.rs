@@ -4,7 +4,9 @@ mod collab;
 mod commands;
 mod db;
 mod events;
+pub mod executor;
 pub mod llm;
+pub mod planner;
 mod permissions;
 pub mod tools;
 
