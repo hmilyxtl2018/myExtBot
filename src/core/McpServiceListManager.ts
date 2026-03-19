@@ -35,6 +35,7 @@ import { SceneTriggerEngine } from "./SceneTriggerEngine";
 import { CommunicationBridge } from "./CommunicationBridge";
 import { LineageGraphBuilder } from "./LineageGraphBuilder";
 import { LineageExporter } from "./LineageExporter";
+import { validateAgentSpec } from "./AgentSpecValidator";
 
 /**
  * McpServiceListManager is the single source of truth for all MCP services and
@@ -252,8 +253,15 @@ export class McpServiceListManager {
 
   /**
    * Registers an AgentProfile. Agents are enabled by default unless explicitly disabled.
+   * The spec is validated against the 9-pillar schema before registration; an error is
+   * thrown (listing all violations) if validation fails.
    */
   registerAgent(agent: AgentProfile): void {
+    const existingIds = [...this.agents.keys()];
+    const result = validateAgentSpec(agent, existingIds);
+    if (!result.valid) {
+      throw new Error(`Invalid AgentSpec for "${(agent as { id?: unknown }).id}": ${result.errors.join("; ")}`);
+    }
     this.agents.set(agent.id, { enabled: true, ...agent });
     this.lifecycleManager.init(agent.id);
   }
