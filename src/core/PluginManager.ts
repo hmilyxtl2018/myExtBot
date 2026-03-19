@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { PluginEntry, PluginManifest, PluginStatus, PluginSummary } from "./types";
+import { PluginEntry, PluginManifest, PluginSummary } from "./types";
 import { McpServiceListManager } from "./McpServiceListManager";
 import { PluginService } from "../services/PluginService";
 

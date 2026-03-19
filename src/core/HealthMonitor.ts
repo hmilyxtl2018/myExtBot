@@ -14,7 +14,7 @@
  *   - parse retryAfterSeconds and compute rateLimitResetAt
  */
 
-import { ServiceHealth, ServiceHealthRecord } from "./types";
+import { ServiceHealthRecord } from "./types";
 
 /** Number of consecutive failures before entering "degraded" state. */
 const DEGRADED_THRESHOLD = 3;
