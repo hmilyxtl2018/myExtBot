@@ -1,4 +1,5 @@
 import type { McpServiceListManager } from "./McpServiceListManager";
+import type { KnowledgeDbStore } from "./KnowledgeDbStore";
 import type { CostSummary, ServiceHealthRecord } from "./types";
 
 export interface AgentHealthSummary {
@@ -32,7 +33,10 @@ export class MemoryAdapter {
   /** In-memory K-DB stub — replace with real storage backend. */
   private knowledgeDb = new Map<string, KnowledgeEntry[]>();
 
-  constructor(private readonly manager: McpServiceListManager) {}
+  constructor(
+    private readonly manager: McpServiceListManager,
+    private readonly store?: KnowledgeDbStore,
+  ) {}
 
   /**
    * Get agent-level health summary by aggregating service-level health.
@@ -129,11 +133,17 @@ export class MemoryAdapter {
       config.autoPromoteThreshold === undefined ||
       confidence >= config.autoPromoteThreshold;
     if (shouldPromote) {
-      existing.push(entry);
-      // Prune if over max
-      const maxEntries = config.maxEntries ?? 1000;
-      while (existing.length > maxEntries) existing.shift();
-      this.knowledgeDb.set(agentId, existing);
+      if (this.store) {
+        this.store.insert(agentId, entry);
+        const maxEntries = config.maxEntries ?? 1000;
+        this.store.prune(agentId, maxEntries);
+      } else {
+        existing.push(entry);
+        // Prune if over max
+        const maxEntries = config.maxEntries ?? 1000;
+        while (existing.length > maxEntries) existing.shift();
+        this.knowledgeDb.set(agentId, existing);
+      }
       return entry;
     }
 
@@ -145,12 +155,18 @@ export class MemoryAdapter {
    * Uses simple keyword matching; replace with embedding-based similarity in production.
    */
   lookupSimilar(agentId: string, query: string, topK = 5): KnowledgeEntry[] {
+    if (this.store) {
+      return this.store.query(agentId, query, topK);
+    }
     const entries = this.knowledgeDb.get(agentId) ?? [];
     const q = query.toLowerCase();
     return entries.filter((e) => e.content.toLowerCase().includes(q)).slice(0, topK);
   }
 
   getKnowledgeDb(agentId: string): KnowledgeEntry[] {
+    if (this.store) {
+      return this.store.query(agentId, "", 10000);
+    }
     return [...(this.knowledgeDb.get(agentId) ?? [])];
   }
 }
