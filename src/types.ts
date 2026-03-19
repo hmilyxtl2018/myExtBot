@@ -28,6 +28,9 @@ export interface ChatMessage {
   id: number;
   role: MessagePayload["role"];
   content: string;
+}
+
+/**
  * Shared type definitions for myExtBot.
  */
 

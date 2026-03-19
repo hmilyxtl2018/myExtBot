@@ -94,6 +94,10 @@ export class AgentRouter {
           score += 1;
         }
 
+        // Apply Pillar 8 priority weight
+        const priority = agent.orchestration?.priority ?? 1.0;
+        score = Math.round(score * priority);
+
         // Build reasoning string
         const reasons: string[] = [];
         if (matchedIntents.length > 0) reasons.push(`匹配意图: ${matchedIntents.join(", ")}`);
