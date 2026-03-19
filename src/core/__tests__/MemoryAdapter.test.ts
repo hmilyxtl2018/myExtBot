@@ -1,4 +1,5 @@
 import { MemoryAdapter } from "../MemoryAdapter";
+import { KnowledgeDbStore } from "../KnowledgeDbStore";
 import type { McpServiceListManager } from "../McpServiceListManager";
 import type { AgentProfile, CostSummary, ServiceHealthRecord } from "../types";
 
@@ -313,6 +314,107 @@ describe("MemoryAdapter", () => {
       const result = adapter.getAgentCostSummary("bot", costSummary);
       expect(result.isNearAlert).toBe(true);
       expect(result.isOverBudget).toBe(false);
+    });
+  });
+
+  // ── KnowledgeDbStore integration ──────────────────────────────────────────
+
+  describe("MemoryAdapter with KnowledgeDbStore (SQLite)", () => {
+    let store: KnowledgeDbStore;
+    const agent: AgentProfile = {
+      id: "bot",
+      name: "Bot",
+      memory: { knowledgeDb: { enabled: true } },
+    };
+
+    beforeEach(() => {
+      store = new KnowledgeDbStore();
+      store.init(":memory:");
+    });
+
+    afterEach(() => {
+      store.close();
+    });
+
+    it("uses SQLite when KnowledgeDbStore is provided", () => {
+      const mgr = makeMockManager([agent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager, store);
+
+      const entry = adapter.extractTrace("bot", "SQLite-backed content", 0.9, ["sql"]);
+      expect(entry).not.toBeNull();
+
+      const results = adapter.lookupSimilar("bot", "SQLite", 5);
+      expect(results).toHaveLength(1);
+      expect(results[0].content).toBe("SQLite-backed content");
+      expect(results[0].tags).toEqual(["sql"]);
+    });
+
+    it("lookupSimilar returns matching entries from SQLite", () => {
+      const mgr = makeMockManager([agent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager, store);
+
+      adapter.extractTrace("bot", "TypeScript satisfies operator", 0.9);
+      adapter.extractTrace("bot", "Python list comprehension", 0.9);
+
+      const hits = adapter.lookupSimilar("bot", "typescript", 5);
+      expect(hits).toHaveLength(1);
+      expect(hits[0].content).toContain("TypeScript");
+    });
+
+    it("respects topK when querying from SQLite", () => {
+      const mgr = makeMockManager([agent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager, store);
+
+      for (let i = 0; i < 8; i++) {
+        adapter.extractTrace("bot", `TypeScript tip ${i}`, 0.9);
+      }
+      const results = adapter.lookupSimilar("bot", "TypeScript", 3);
+      expect(results).toHaveLength(3);
+    });
+
+    it("prunes entries via SQLite when maxEntries is configured", () => {
+      const agentWithMax: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true, maxEntries: 2 } },
+      };
+      const mgr = makeMockManager([agentWithMax]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager, store);
+
+      adapter.extractTrace("bot", "entry 1", 0.9);
+      adapter.extractTrace("bot", "entry 2", 0.9);
+      adapter.extractTrace("bot", "entry 3", 0.9);
+
+      const db = adapter.getKnowledgeDb("bot");
+      expect(db).toHaveLength(2);
+    });
+
+    it("returns null when knowledgeDb is disabled (SQLite path)", () => {
+      const disabledAgent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: false } },
+      };
+      const mgr = makeMockManager([disabledAgent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager, store);
+      expect(adapter.extractTrace("bot", "content", 0.9)).toBeNull();
+    });
+  });
+
+  describe("MemoryAdapter without KnowledgeDbStore (in-memory Map)", () => {
+    it("falls back to the in-memory Map when no store is provided", () => {
+      const agent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true } },
+      };
+      const mgr = makeMockManager([agent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager);
+
+      adapter.extractTrace("bot", "in-memory content", 0.9);
+      const results = adapter.lookupSimilar("bot", "memory", 5);
+      expect(results).toHaveLength(1);
+      expect(results[0].content).toBe("in-memory content");
     });
   });
 });
