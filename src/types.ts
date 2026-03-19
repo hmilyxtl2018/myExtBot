@@ -81,6 +81,15 @@ export interface PluginManifest {
   homepage?: string;
   /** Optional HTTP endpoint to forward tool calls to. */
   executeEndpoint?: string;
+  /**
+   * Request timeout in milliseconds. Defaults to 30 000 ms (30 s) when not set.
+   */
+  timeout?: number;
+  /**
+   * Retry configuration for transient (5xx / network) failures.
+   * Defaults to { maxRetries: 3, backoffMs: 1000 } when not set.
+   */
+  retryConfig?: { maxRetries: number; backoffMs: number };
   tools: ToolDefinition[];
 }
 

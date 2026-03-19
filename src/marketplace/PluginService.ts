@@ -1,58 +1,7 @@
-import axios from "axios";
-import { BaseService } from "../services/BaseService";
-import { PluginManifest } from "../types";
-import { ToolDefinition, ToolCall, ToolResult } from "../core/types";
-
 /**
- * PluginService — wraps a PluginManifest as an McpService.
+ * @deprecated Import from `../services/PluginService` directly.
  *
- * execute() logic:
- * - If manifest.executeEndpoint exists: forward the tool call via HTTP POST.
- * - Otherwise: return a stub result { success: true, output: { message: "plugin stub" } }.
+ * This file re-exports the canonical PluginService so that code that previously
+ * imported from `src/marketplace/PluginService` continues to work unchanged.
  */
-export class PluginService extends BaseService {
-  readonly name: string;
-
-  constructor(private manifest: PluginManifest) {
-    super();
-    this.name = manifest.id;
-  }
-
-  getToolDefinitions(): ToolDefinition[] {
-    return this.manifest.tools;
-  }
-
-  async execute(call: ToolCall): Promise<ToolResult> {
-    if (this.manifest.executeEndpoint) {
-      try {
-        const response = await axios.post(this.manifest.executeEndpoint, {
-          toolName: call.toolName,
-          arguments: call.arguments,
-        });
-        return {
-          success: true,
-          output: response.data,
-        };
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : "Unknown error";
-        return {
-          success: false,
-          output: null,
-          error: `Plugin execute failed: ${message}`,
-        };
-      }
-    }
-
-    // Stub result for plugins without a live endpoint
-    return {
-      success: true,
-      output: {
-        message: "plugin stub",
-        plugin: this.manifest.id,
-        tool: call.toolName,
-        arguments: call.arguments,
-      },
-    };
-  }
-}
+export { PluginService } from "../services/PluginService";
