@@ -33,7 +33,7 @@ export class PerplexityService extends BaseService {
   }
 
   async execute(call: ToolCall): Promise<ToolResult> {
-    const query = call.arguments["query"] as string ?? String(call.arguments);
+    const query = (call.arguments["query"] as string | undefined) ?? String(call.arguments);
     return this._simulateApiCall(query);
   }
 
@@ -43,13 +43,10 @@ export class PerplexityService extends BaseService {
    * Set PERPLEXITY_SIMULATE_RATE_LIMIT=true to force a 429.
    */
   private async _simulateApiCall(query: string): Promise<ToolResult> {
-    // Note: process.env access requires @types/node
-    const env = (typeof process !== "undefined" && process.env) ? process.env : {};
-
-    if (env["PERPLEXITY_SIMULATE_RATE_LIMIT"] === "true") {
+    if (process.env["PERPLEXITY_SIMULATE_RATE_LIMIT"] === "true") {
       return { success: false, error: "429 Too Many Requests — rate limit exceeded" };
     }
-    if (env["PERPLEXITY_SIMULATE_FAILURE"] === "true") {
+    if (process.env["PERPLEXITY_SIMULATE_FAILURE"] === "true") {
       return { success: false, error: "503 Service Unavailable" };
     }
 

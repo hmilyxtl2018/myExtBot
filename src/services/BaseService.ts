@@ -17,6 +17,7 @@ export abstract class BaseService implements McpService {
    * Fallback service name used when this service is unhealthy.
    * When set, McpServiceListManager.dispatch() automatically routes to this
    * service when the primary is "down" or "rate-limited".
+   * When `undefined`, no fallback routing occurs.
    */
   fallbackServiceName?: string;
 

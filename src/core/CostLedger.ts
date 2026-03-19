@@ -45,8 +45,9 @@ export class CostLedger {
     });
   }
 
-  /**
-   * Record cost by agentId and amount (compatibility method for ContractEnforcer).
+  /** recordCost compatibility method for ContractEnforcer.
+   * Uses "unknown" as placeholder for toolName and serviceName since the
+   * caller doesn't have that context. Cost is tracked by agentId only.
    */
   recordCost(agentId: string, cost: number): void {
     const entry: CostEntry = {

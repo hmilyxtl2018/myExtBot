@@ -66,7 +66,12 @@ export class CommunicationBridge {
       channel,
     });
 
-    const result = await this.manager.dispatchAs(toAgentId, toolCall);
+    const result = await this.manager.dispatchAs(toAgentId, toolCall).catch(
+      (err: unknown): ToolResult => ({
+        success: false,
+        error: (err as Error).message ?? String(err),
+      })
+    );
     return { allowed: true, result, message: bridgeMessage };
   }
 

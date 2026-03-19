@@ -477,7 +477,9 @@ export class McpServiceListManager {
         return { success: false, error: entry.error };
       }
 
-      // canDelegateTo allows it but CommunicationBridge didn't — run directly
+      // canDelegateTo allows it but CommunicationBridge didn't — run directly.
+      // dispatchAs can throw when lifecycle guards or SLA contracts block the call,
+      // so we catch and normalise exceptions into a ToolResult.
       const directResult: ToolResult = await this.dispatchAs(toAgentId, toolCall).catch((err: unknown) => ({
         success: false as const,
         output: undefined,

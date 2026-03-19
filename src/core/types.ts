@@ -779,12 +779,16 @@ export interface PluginSummary {
 
 /**
  * The complete 9-Pillar Agent Specification.
- * Extends AgentProfile; Pillars 1-6 are inherited, Pillars 7-9 are declared here
- * (mirroring the optional fields already in AgentProfile for explicitness).
+ * Extends AgentProfile; Pillars 1-6 are inherited, Pillars 7-9 are declared here.
+ *
+ * Note: `communication`, `orchestration`, and `memory` are already present as
+ * optional fields in `AgentProfile`. They are re-declared here intentionally so
+ * that the `AgentSpec` interface explicitly documents all 9 pillars in one place,
+ * making it the authoritative, self-describing contract for a fully-specified agent.
  */
 export interface AgentSpec extends AgentProfile {
   // Pillars 1-6 are inherited from AgentProfile
-  // Pillars 7-9 (also present in AgentProfile as optional fields):
+  // Pillars 7-9 (re-declared for explicit documentation; same as AgentProfile fields):
   communication?: CommunicationConfig;
   orchestration?: OrchestrationConfig;
   memory?: MemoryConfig;
