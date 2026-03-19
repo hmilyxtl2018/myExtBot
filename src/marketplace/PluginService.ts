@@ -1,6 +1,7 @@
 import axios from "axios";
 import { BaseService } from "../services/BaseService";
-import { PluginManifest, ToolDefinition, ToolCall, ToolResult } from "../types";
+import { PluginManifest } from "../types";
+import { ToolDefinition, ToolCall, ToolResult } from "../core/types";
 
 /**
  * PluginService — wraps a PluginManifest as an McpService.
@@ -26,7 +27,7 @@ export class PluginService extends BaseService {
       try {
         const response = await axios.post(this.manifest.executeEndpoint, {
           toolName: call.toolName,
-          parameters: call.parameters,
+          arguments: call.arguments,
         });
         return {
           success: true,
@@ -50,7 +51,7 @@ export class PluginService extends BaseService {
         message: "plugin stub",
         plugin: this.manifest.id,
         tool: call.toolName,
-        parameters: call.parameters,
+        arguments: call.arguments,
       },
     };
   }

@@ -16,7 +16,7 @@ import { PluginManifest, PluginSummary } from "../types";
  *   DELETE /api/plugins/:id/uninstall — uninstall a plugin
  */
 export function createPluginRoutes(
-  manager: McpServiceListManager,
+  _manager: McpServiceListManager,
   installer: PluginInstaller,
   registry: PluginRegistry
 ): Router {
@@ -86,7 +86,7 @@ export function createPluginRoutes(
    */
   router.get("/:id", async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = req.params["id"] as string;
       const [marketplace, installed] = await Promise.all([
         registry.loadMarketplace(),
         registry.loadInstalled(),
@@ -115,7 +115,7 @@ export function createPluginRoutes(
    */
   router.post("/:id/install", async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = req.params["id"] as string;
       const result = await installer.install(id);
 
       if (!result.success) {
@@ -147,7 +147,7 @@ export function createPluginRoutes(
    */
   router.delete("/:id/uninstall", async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = req.params["id"] as string;
       const result = await installer.uninstall(id);
 
       if (!result.success) {

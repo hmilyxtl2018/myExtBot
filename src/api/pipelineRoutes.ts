@@ -37,7 +37,7 @@ export function createPipelineRouter(manager: McpServiceListManager): Router {
 
   // GET /api/pipelines/:id
   router.get("/:id", (req: Request, res: Response) => {
-    const pipeline = manager.getPipeline(req.params["id"]);
+    const pipeline = manager.getPipeline(req.params["id"] as string);
     if (!pipeline) {
       res.status(404).json({ success: false, error: "Pipeline not found" });
       return;
@@ -47,7 +47,7 @@ export function createPipelineRouter(manager: McpServiceListManager): Router {
 
   // DELETE /api/pipelines/:id
   router.delete("/:id", (req: Request, res: Response) => {
-    const deleted = manager.unregisterPipeline(req.params["id"]);
+    const deleted = manager.unregisterPipeline(req.params["id"] as string);
     if (!deleted) {
       res.status(404).json({ success: false, error: "Pipeline not found" });
       return;
@@ -61,7 +61,7 @@ export function createPipelineRouter(manager: McpServiceListManager): Router {
       initialInput?: Record<string, unknown>;
     };
 
-    const runResult = await manager.runPipeline(req.params["id"], initialInput);
+    const runResult = await manager.runPipeline(req.params["id"] as string, initialInput);
 
     if (!runResult.success && runResult.stepResults.length === 0) {
       res.status(404).json(runResult);
