@@ -1,68 +1,20 @@
-/**
- * CostLedger — M5 成本账本。
- *
- * 跟踪每个 Agent 的日累计成本，供 ContractEnforcer 的 maxDailyCost 守卫使用。
- */
-export class CostLedger {
-  /** agentId → date string → cumulative cost (USD) */
-  private ledger = new Map<string, Map<string, number>>();
-
-  private todayKey(): string {
-    return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
-  }
-
-  /** 记录一次工具调用的成本 */
-  recordCost(agentId: string, cost: number): void {
-    const day = this.todayKey();
-    if (!this.ledger.has(agentId)) {
-      this.ledger.set(agentId, new Map());
-    }
-    const agentMap = this.ledger.get(agentId)!;
-    agentMap.set(day, (agentMap.get(day) ?? 0) + cost);
-  }
-
-  /** 查询某 Agent 今日累计成本 */
-  getDailyCost(agentId: string): number {
-    const day = this.todayKey();
-    return this.ledger.get(agentId)?.get(day) ?? 0;
-  }
-
-  /** 查询某 Agent 总累计成本（所有日期） */
-  getTotalCost(agentId: string): number {
-    const agentMap = this.ledger.get(agentId);
-    if (!agentMap) return 0;
-    let total = 0;
-    for (const cost of agentMap.values()) {
-      total += cost;
-    }
-    return total;
-  }
-
-  /** 获取所有 Agent 的今日成本快照 */
-  getDailySummary(): Record<string, number> {
-    const day = this.todayKey();
-    const result: Record<string, number> = {};
-    for (const [agentId, agentMap] of this.ledger.entries()) {
-      result[agentId] = agentMap.get(day) ?? 0;
-    }
-    return result;
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { CostEntry, CostSummary } from "./types";
 
 /**
- * 成本查询过滤器。
+ * Cost query filter.
  */
 export interface CostQueryFilter {
   agentId?: string;
   toolName?: string;
   serviceName?: string;
-  /** YYYY-MM-DD，不传则不限日期 */
+  /** YYYY-MM-DD, filters to this exact date when specified */
   date?: string;
-  /** 起始日期（含），YYYY-MM-DD */
+  /** Start date (inclusive), YYYY-MM-DD */
   startDate?: string;
-  /** 结束日期（含），YYYY-MM-DD */
+  /** End date (inclusive), YYYY-MM-DD */
   endDate?: string;
   success?: boolean;
   limit?: number;
@@ -70,12 +22,10 @@ export interface CostQueryFilter {
 }
 
 /**
- * CostLedger — 记录和查询工具调用成本。
+ * CostLedger — records and queries tool call costs.
  *
- * 存储：内存中维护 CostEntry[]，同时异步追加写入
- *       ~/.myextbot/costs/costs-YYYY-MM-DD.jsonl（与 DelegationLogWriter 同目录策略）
- *
- * 注意：写入失败不影响主流程（try/catch，只 console.warn）
+ * Storage: in-memory CostEntry[] array, with async append to
+ *          ~/.myextbot/costs/costs-YYYY-MM-DD.jsonl
  */
 export class CostLedger {
   private entries: CostEntry[] = [];
@@ -86,7 +36,7 @@ export class CostLedger {
   }
 
   /**
-   * 记录一条成本条目（内存 + 异步写文件）。
+   * Record a cost entry (in-memory + async file write).
    */
   async record(entry: CostEntry): Promise<void> {
     this.entries.push(entry);
@@ -95,8 +45,24 @@ export class CostLedger {
     });
   }
 
+  /** recordCost compatibility method for ContractEnforcer.
+   * Uses "unknown" as placeholder for toolName and serviceName since the
+   * caller doesn't have that context. Cost is tracked by agentId only.
+   */
+  recordCost(agentId: string, cost: number): void {
+    const entry: CostEntry = {
+      timestamp: new Date().toISOString(),
+      agentId,
+      toolName: "unknown",
+      serviceName: "unknown",
+      cost,
+      success: true,
+    };
+    this.entries.push(entry);
+  }
+
   /**
-   * 查询成本条目。
+   * Query cost entries.
    */
   query(filter?: CostQueryFilter): CostEntry[] {
     let result = this.entries;
@@ -143,7 +109,7 @@ export class CostLedger {
   }
 
   /**
-   * 生成成本汇总报告。
+   * Generate a cost summary report.
    */
   summarize(filter?: Omit<CostQueryFilter, "limit" | "offset">): CostSummary {
     const entries = this.query(filter);
@@ -159,18 +125,15 @@ export class CostLedger {
       totalCost += entry.cost;
       if (entry.success) successfulCalls++;
 
-      // byAgent
       const agentKey = entry.agentId ?? "(direct)";
       if (!byAgent[agentKey]) byAgent[agentKey] = { cost: 0, calls: 0 };
       byAgent[agentKey].cost += entry.cost;
       byAgent[agentKey].calls++;
 
-      // byTool
       if (!byTool[entry.toolName]) byTool[entry.toolName] = { cost: 0, calls: 0 };
       byTool[entry.toolName].cost += entry.cost;
       byTool[entry.toolName].calls++;
 
-      // byService
       if (!byService[entry.serviceName]) byService[entry.serviceName] = { cost: 0, calls: 0 };
       byService[entry.serviceName].cost += entry.cost;
       byService[entry.serviceName].calls++;
@@ -192,8 +155,7 @@ export class CostLedger {
   }
 
   /**
-   * 查询指定 Agent 在今日的累计成本。
-   * （M8 ContractEnforcer 会调用此方法）
+   * Query today's accumulated cost for a specific agent.
    */
   getDailyCostForAgent(agentId: string, date?: string): number {
     const today = date ?? new Date().toISOString().slice(0, 10);
@@ -202,20 +164,28 @@ export class CostLedger {
   }
 
   /**
-   * 统计符合条件的条目数（不分页）。
+   * Alias for getDailyCostForAgent (used by ContractEnforcer).
+   */
+  getDailyCost(agentId: string): number {
+    return this.getDailyCostForAgent(agentId);
+  }
+
+  /**
+   * Count entries matching the filter (without pagination).
    */
   count(filter?: Omit<CostQueryFilter, "limit" | "offset">): number {
     return this.query(filter).length;
   }
 
   /**
+   * Get all recorded entries.
    */
   getAll(): CostEntry[] {
     return [...this.entries];
   }
 
   /**
-   * 异步追加写入 JSON Lines 文件。
+   * Async append a JSON Lines entry to the cost log file.
    */
   private async appendToFile(entry: CostEntry): Promise<void> {
     const date = entry.timestamp.slice(0, 10);

@@ -1,42 +1,9 @@
-/**
- * src/services/SearchService.ts
- *
- * A lightweight mock search service — used as a fallback when premium
- * services (e.g. PerplexityService) are unavailable.
- */
-
-import { ServiceResult } from "../core/types";
-import { BaseService } from "./BaseService";
-
-export class SearchService extends BaseService {
-  readonly name = "SearchService";
-  readonly description = "Mock web-search service (free, always available)";
-
-  async execute(payload: unknown): Promise<ServiceResult> {
-    const query =
-      typeof payload === "object" &&
-      payload !== null &&
-      "query" in payload
-        ? (payload as { query: string }).query
-        : String(payload);
-
-    return {
-      success: true,
-      data: {
-        source: "SearchService (mock)",
-        query,
-        results: [
-          { title: "Mock Result 1", snippet: `Result for "${query}" (mock)` },
-          { title: "Mock Result 2", snippet: `Another result for "${query}" (mock)` },
-        ],
-      },
 import { ToolCall, ToolDefinition, ToolResult } from "../core/types";
 import { BaseService } from "./BaseService";
 
 /**
- * SearchService — simple in-memory stub for web search.
- * Returns mock results so the demo works without external APIs.
- * SearchService exposes web-search capabilities to the LLM.
+ * SearchService — lightweight mock web-search service.
+ * Returns stub results so the demo works without external APIs.
  *
  * Tool provided: `search_web`
  */
@@ -47,14 +14,6 @@ export class SearchService extends BaseService {
     return [
       {
         name: "search_web",
-        description: "Search the web for information and return a list of results.",
-        parameters: {
-          type: "object",
-          properties: {
-            query: { type: "string", description: "The search query." },
-            maxResults: {
-              type: "number",
-              description: "Maximum number of results to return (default: 5).",
         description:
           "Search the web for information about a given query and return the top results.",
         parameters: {
@@ -84,31 +43,15 @@ export class SearchService extends BaseService {
     const query = call.arguments["query"] as string;
     const maxResults = (call.arguments["maxResults"] as number) ?? 5;
 
-    // Simulate async I/O (realistic: real search APIs take 50-500ms)
+    // Simulate async I/O
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
 
-    // Stub response
-    const results = Array.from({ length: Math.min(maxResults, 3) }, (_, i) => ({
+    const results = Array.from({ length: Math.min(maxResults, 5) }, (_, i) => ({
       title: `Result ${i + 1} for "${query}"`,
       url: `https://example.com/result-${i + 1}`,
       snippet: `This is a stub result about "${query}".`,
     }));
 
     return { success: true, output: { query, results } };
-
-    const query = call.arguments["query"] as string;
-    const maxResults = (call.arguments["maxResults"] as number) ?? 5;
-
-    // Mock implementation — replace with a real search API call.
-    const mockResults = Array.from({ length: maxResults }, (_, i) => ({
-      title: `Result ${i + 1} for "${query}"`,
-      url: `https://example.com/search?q=${encodeURIComponent(query)}&page=${i + 1}`,
-      snippet: `This is a mock snippet for result ${i + 1} matching the query "${query}".`,
-    }));
-
-    return {
-      success: true,
-      output: { query, results: mockResults },
-    };
   }
 }

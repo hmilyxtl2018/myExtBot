@@ -118,4 +118,30 @@ export class AgentLifecycleManager {
   private isValidTransition(from: AgentStatus, to: AgentStatus): boolean {
     return VALID_TRANSITIONS[from].includes(to);
   }
+
+  /**
+   * Check whether an agent should be auto-retired based on its memory config.
+   * If the agent has been in "sleeping" status past autoRetireAfterMinutes, retire it.
+   *
+   * @param agentId - The agent to check.
+   * @param autoRetireAfterMinutes - Minutes of sleep before auto-retire. If undefined, no-op.
+   */
+  checkAutoRetire(agentId: string, autoRetireAfterMinutes?: number): boolean {
+    if (autoRetireAfterMinutes === undefined) return false;
+    const record = this.getRecord(agentId);
+    if (record.status !== "sleeping") return false;
+
+    const sleepingSince = new Date(record.since).getTime();
+    const elapsedMinutes = (Date.now() - sleepingSince) / 60_000;
+
+    if (elapsedMinutes >= autoRetireAfterMinutes) {
+      try {
+        this.transition(agentId, "retired", "auto-retired after inactivity", "health-monitor");
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
 }
