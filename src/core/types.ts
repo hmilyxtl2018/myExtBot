@@ -777,6 +777,40 @@ export interface PluginSummary {
 
 // ── AgentSpec: Complete 9-Pillar Specification ────────────────────────────────
 
+/** Valid control-loop execution strategies for an agent. */
+export type ControlLoopType = "plan-act" | "react" | "reflexion" | "custom";
+
+/** A tool declaration inside an AgentSpec (Pillar 3). */
+export interface AgentSpecTool {
+  /** Unique tool name within this agent. */
+  name: string;
+  [key: string]: unknown;
+}
+
+/** Runtime guardrails for an AgentSpec (Pillar 4). */
+export interface AgentSpecGuardrails {
+  /** Maximum number of tokens consumed per LLM call (must be > 0). */
+  maxTokensPerCall?: number;
+  /** Maximum monetary cost allowed per call in USD (must be > 0). */
+  maxCostPerCall?: number;
+  /** Whether a human must approve the action before execution. */
+  requireHumanApproval?: boolean;
+}
+
+/** Prompt templates for an AgentSpec (Pillar 5). */
+export interface AgentSpecPrompts {
+  /** System prompt injected to the LLM for this agent. */
+  system?: string;
+}
+
+/** A scored domain entry for Pillar 6 (Intent & Persona). */
+export interface AgentSpecDomain {
+  /** Domain label (e.g. "finance", "legal"). */
+  name: string;
+  /** Confidence score in [0, 1]. */
+  score: number;
+}
+
 /**
  * The complete 9-Pillar Agent Specification.
  * Extends AgentProfile; Pillars 1-6 are inherited, Pillars 7-9 are declared here.
@@ -788,6 +822,24 @@ export interface PluginSummary {
  */
 export interface AgentSpec extends AgentProfile {
   // Pillars 1-6 are inherited from AgentProfile
+
+  // Pillar 1 addition — semantic version string (e.g. "1.2.3")
+  version?: string;
+
+  // Pillar 2 — Control Loop
+  controlLoop?: {
+    type: ControlLoopType;
+  };
+
+  // Pillar 3 — Tools declared by this agent
+  tools?: AgentSpecTool[];
+
+  // Pillar 4 — Runtime guardrails
+  guardrails?: AgentSpecGuardrails;
+
+  // Pillar 5 — Prompt templates
+  prompts?: AgentSpecPrompts;
+
   // Pillars 7-9 (re-declared for explicit documentation; same as AgentProfile fields):
   communication?: CommunicationConfig;
   orchestration?: OrchestrationConfig;
