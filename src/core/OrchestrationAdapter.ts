@@ -12,7 +12,15 @@ export class OrchestrationAdapter {
   constructor(private readonly manager: McpServiceListManager) {}
 
   /**
-   * Resolve the best agent for a task considering routing config, priority, and concurrency.
+   * Resolve the best agent for a task, considering routing config, priority, and concurrency.
+   *
+   * Scoring algorithm (per agent):
+   *  - +3 for each required intent that matches `orchestration.routing.intents` (or `intents`)
+   *  - +2 for each required domain that matches `orchestration.routing.domains` (or `domains`)
+   *  - +1 for each routing intent that appears as a substring of `context.query`
+   *  - The raw score is then multiplied by `orchestration.priority` (default 1.0)
+   *
+   * The agent with the highest weighted score is returned; undefined if no agent scores > 0.
    */
   resolveAgentForTask(context: TaskContext): AgentProfile | undefined {
     const agents = this.manager.listAgents();

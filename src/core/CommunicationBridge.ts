@@ -17,14 +17,19 @@ export class CommunicationBridge {
 
   constructor(private readonly manager: McpServiceListManager) {}
 
-  /** Check whether fromAgent is allowed to delegate to toAgent. */
+  /** Check whether fromAgent is allowed to delegate to toAgent.
+   * Checks both `communication.delegationTargets` (Pillar 7) and legacy `canDelegateTo`
+   * so that agents configured with either field are handled correctly.
+   */
   canDelegate(fromAgentId: string, toAgentId: string): boolean {
     const agent = this.manager.getAgent(fromAgentId);
     if (!agent) return false;
-    // Use communication config delegationTargets if available, fall back to canDelegateTo
-    const targets = agent.communication?.delegationTargets ?? agent.canDelegateTo;
-    if (!targets || targets.length === 0) return false;
-    return targets.includes("*") || targets.includes(toAgentId);
+    // Union of Pillar-7 targets and legacy canDelegateTo
+    const communicationTargets = agent.communication?.delegationTargets ?? [];
+    const legacyTargets = agent.canDelegateTo ?? [];
+    const allTargets = [...new Set([...communicationTargets, ...legacyTargets])];
+    if (allTargets.length === 0) return false;
+    return allTargets.includes("*") || allTargets.includes(toAgentId);
   }
 
   /** Record a message in the bridge log. */

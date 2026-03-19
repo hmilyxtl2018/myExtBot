@@ -124,11 +124,11 @@ export class MemoryAdapter {
 
     const existing = this.knowledgeDb.get(agentId) ?? [];
 
-    // Auto-promote if above threshold
-    if (
+    // Auto-promote: undefined threshold means always promote; otherwise check confidence.
+    const shouldPromote =
       config.autoPromoteThreshold === undefined ||
-      confidence >= config.autoPromoteThreshold
-    ) {
+      confidence >= config.autoPromoteThreshold;
+    if (shouldPromote) {
       existing.push(entry);
       // Prune if over max
       const maxEntries = config.maxEntries ?? 1000;

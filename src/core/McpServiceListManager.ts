@@ -458,46 +458,20 @@ export class McpServiceListManager {
     );
 
     if (!allowed) {
-      // Fall back to direct permission check for backward compatibility
-      const canDelegate =
-        fromAgent.canDelegateTo?.includes("*") ||
-        fromAgent.canDelegateTo?.includes(toAgentId);
-      if (!canDelegate) {
-        const entry: DelegationLogEntry = {
-          timestamp: new Date().toISOString(),
-          fromAgentId,
-          toAgentId,
-          toolName: toolCall.toolName,
-          arguments: toolCall.arguments,
-          success: false,
-          error: `Agent "${fromAgentId}" is not permitted to delegate to "${toAgentId}".`,
-        };
-        this.appendDelegationLog(entry);
-        void this.logWriter.append(entry);
-        return { success: false, error: entry.error };
-      }
-
-      // canDelegateTo allows it but CommunicationBridge didn't — run directly.
-      // dispatchAs can throw when lifecycle guards or SLA contracts block the call,
-      // so we catch and normalise exceptions into a ToolResult.
-      const directResult: ToolResult = await this.dispatchAs(toAgentId, toolCall).catch((err: unknown) => ({
-        success: false as const,
-        output: undefined,
-        error: (err as Error).message,
-      }));
+      // CommunicationBridge.canDelegate checks both communication.delegationTargets
+      // and legacy canDelegateTo, so !allowed means the agent is truly not permitted.
       const entry: DelegationLogEntry = {
         timestamp: new Date().toISOString(),
         fromAgentId,
         toAgentId,
         toolName: toolCall.toolName,
         arguments: toolCall.arguments,
-        success: directResult.success,
-        output: directResult.output,
-        error: directResult.error,
+        success: false,
+        error: `Agent "${fromAgentId}" is not permitted to delegate to "${toAgentId}".`,
       };
       this.appendDelegationLog(entry);
       void this.logWriter.append(entry);
-      return directResult;
+      return { success: false, error: entry.error };
     }
 
     const finalResult = result ?? { success: false, error: "No result from bridge" };
