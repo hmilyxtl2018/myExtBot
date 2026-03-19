@@ -86,10 +86,13 @@ export interface McpService {
   enabled: boolean;
   /**
    * Returns all tool definitions provided by this service.
+   * These definitions are forwarded to the LLM so it knows what tools it can call.
    */
   getToolDefinitions(): ToolDefinition[];
   /**
    * Executes a tool call routed to this service.
+   * @param call - The tool invocation request from the LLM.
+   * @returns A promise resolving to the result of the tool execution.
    */
   execute(call: ToolCall): Promise<ToolResult>;
 }
@@ -628,7 +631,7 @@ export interface PipelineRunResult {
     error?: string;
     durationMs: number;
   }>;
-  /** Output of the last step */
+  /** Output of the last step (treated as the pipeline's overall output) */
   finalOutput?: unknown;
   /** Index of the first step that failed (set only when success is false) */
   failedAtStep?: number;
