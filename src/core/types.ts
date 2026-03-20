@@ -311,6 +311,8 @@ export interface MemoryConfig {
     enabled: boolean;
     autoPromoteThreshold?: number;
     maxEntries?: number;
+    /** Auto-retire entries older than this many minutes. Disabled when omitted. */
+    autoRetireAfterMinutes?: number;
   };
   costTracking?: {
     enabled: boolean;

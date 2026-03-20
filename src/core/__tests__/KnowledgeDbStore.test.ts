@@ -42,6 +42,12 @@ describe("KnowledgeDbStore", () => {
       const results = store.query("agent1", "anything", 10);
       expect(results).toEqual([]);
     });
+
+    it("rejects paths containing path-traversal sequences", () => {
+      const bad = new KnowledgeDbStore();
+      expect(() => bad.init("../evil.db")).toThrow(/Invalid database path/);
+      expect(() => bad.init("data/../../etc/passwd")).toThrow(/Invalid database path/);
+    });
   });
 
   // ── insert / query round-trip ─────────────────────────────────────────────
@@ -186,6 +192,119 @@ describe("KnowledgeDbStore", () => {
       const results = store.query("agent1", "", 10);
       expect(results[0].content).toBe("high score entry");
       expect(results[2].content).toBe("low score entry");
+    });
+  });
+
+  // ── expiresAt persistence ─────────────────────────────────────────────────
+
+  describe("expiresAt", () => {
+    it("persists expiresAt when provided", () => {
+      const expires = "2026-12-31T23:59:59.000Z";
+      const entry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-1",
+        agentId: "agent1",
+        content: "expiring content",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: expires,
+      };
+      store.insert("agent1", entry);
+
+      const results = store.query("agent1", "expiring", 10);
+      expect(results[0].expiresAt).toBe(expires);
+    });
+
+    it("expiresAt is undefined when not set", () => {
+      store.insert("agent1", makeEntry("agent1", "no expiry", 0.9));
+      const results = store.query("agent1", "no expiry", 10);
+      expect(results[0].expiresAt).toBeUndefined();
+    });
+  });
+
+  // ── deleteExpired ─────────────────────────────────────────────────────────
+
+  describe("deleteExpired", () => {
+    it("deletes entries whose expiresAt is in the past", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const future = new Date(Date.now() + 60_000).toISOString();
+
+      const expiredEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-1",
+        agentId: "agent1",
+        content: "expired entry",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: past,
+      };
+      const activeEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-2",
+        agentId: "agent1",
+        content: "active entry",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: future,
+      };
+      store.insert("agent1", expiredEntry);
+      store.insert("agent1", activeEntry);
+
+      store.deleteExpired("agent1");
+
+      const results = store.query("agent1", "", 10);
+      expect(results).toHaveLength(1);
+      expect(results[0].content).toBe("active entry");
+    });
+
+    it("does not delete entries without expiresAt", () => {
+      store.insert("agent1", makeEntry("agent1", "permanent entry", 0.9));
+      store.deleteExpired("agent1");
+      expect(store.query("agent1", "", 10)).toHaveLength(1);
+    });
+
+    it("deletes expired entries across all agents when no agentId given", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+
+      const e1: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-a1-1", agentId: "a1", content: "a1 expired",
+        confidence: 0.9, createdAt: new Date().toISOString(), expiresAt: past,
+      };
+      const e2: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-a2-1", agentId: "a2", content: "a2 expired",
+        confidence: 0.9, createdAt: new Date().toISOString(), expiresAt: past,
+      };
+      store.insert("a1", e1);
+      store.insert("a2", e2);
+
+      store.deleteExpired();
+
+      expect(store.query("a1", "", 10)).toHaveLength(0);
+      expect(store.query("a2", "", 10)).toHaveLength(0);
+    });
+  });
+
+  // ── list ──────────────────────────────────────────────────────────────────
+
+  describe("list", () => {
+    it("returns all entries for a specific agent", () => {
+      store.insert("agent1", makeEntry("agent1", "entry A", 0.9));
+      store.insert("agent1", makeEntry("agent1", "entry B", 0.8));
+      store.insert("agent2", makeEntry("agent2", "entry C", 0.7));
+
+      const results = store.list("agent1");
+      expect(results).toHaveLength(2);
+      expect(results.every((r) => r.agentId === "agent1")).toBe(true);
+    });
+
+    it("returns entries for all agents when no agentId given", () => {
+      store.insert("agent1", makeEntry("agent1", "entry A", 0.9));
+      store.insert("agent2", makeEntry("agent2", "entry B", 0.8));
+
+      const results = store.list();
+      expect(results).toHaveLength(2);
+    });
+
+    it("returns empty array when no entries exist", () => {
+      expect(store.list("agent1")).toEqual([]);
+      expect(store.list()).toEqual([]);
     });
   });
 });

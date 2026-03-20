@@ -68,6 +68,9 @@ dist/
 
 # Runtime data - do not commit user installation state
 data/installed-plugins.json
+data/knowledge.db
+data/knowledge.db-shm
+data/knowledge.db-wal
 
 # Build artifacts
 *.tsbuildinfo
