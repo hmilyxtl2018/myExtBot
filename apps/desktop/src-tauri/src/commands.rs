@@ -594,3 +594,32 @@ pub async fn route_agent_for_query(
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Generate an execution plan for `goal` and enrich each step with the
+/// best-matching agent assignment from the AgentRouter.
+///
+/// The agent router first tries the TS Core REST endpoint; if it is
+/// unreachable it falls back to keyword scoring over the locally cached agents.
+/// Steps for which no agent matches are returned unchanged with routing fields
+/// set to `null`.
+///
+/// # Arguments
+/// * `goal` – natural-language description of the user's goal
+#[tauri::command]
+pub async fn plan_with_routing(
+    goal: String,
+    bridge: State<'_, TsBridge>,
+) -> Result<Vec<crate::events::PlanStep>, String> {
+    // 1. Generate the plan via LLM.
+    let steps = crate::planner::plan(&goal)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 2. Build an AgentRouter that shares the same base URL as the managed bridge.
+    let router = crate::agent_router::AgentRouter::new(Some(bridge.base_url().to_string()));
+
+    // 3. Assign agents to each step (best-effort; never fails the command).
+    let enriched = crate::planner::assign_agents(steps, &router).await;
+
+    Ok(enriched)
+}

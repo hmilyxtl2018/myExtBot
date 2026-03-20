@@ -7,9 +7,7 @@
 
 use crate::events::{PlanStep, PlanStepStatus};
 use anyhow::Result;
-use tracing::warn;
-
-/// System prompt used to elicit a structured JSON plan from the LLM.
+use tracing::warn;/// System prompt used to elicit a structured JSON plan from the LLM.
 const PLANNING_SYSTEM_PROMPT: &str = r#"You are a planning agent.
 Given a goal, output ONLY a valid JSON array of steps (no markdown, no explanation).
 Each element must have:
@@ -61,6 +59,10 @@ fn parse_plan(text: &str) -> Option<Vec<PlanStep>> {
             tool:        r.tool,
             params:      r.params,
             result:      None,
+            assigned_agent_id:   None,
+            assigned_agent_name: None,
+            routing_score:       None,
+            routing_reasoning:   None,
         })
         .collect();
     Some(steps)
@@ -76,6 +78,10 @@ fn fallback_plan(goal: &str) -> Vec<PlanStep> {
         tool:        None,
         params:      None,
         result:      None,
+        assigned_agent_id:   None,
+        assigned_agent_name: None,
+        routing_score:       None,
+        routing_reasoning:   None,
     }]
 }
 
@@ -101,6 +107,36 @@ pub async fn plan(goal: &str) -> Result<Vec<PlanStep>> {
             Ok(fallback_plan(goal))
         }
     }
+}
+
+/// Assign the best-matching agent to each step in the plan.
+///
+/// For every step, calls [`crate::agent_router::AgentRouter::route_best`] to
+/// find the most appropriate agent.  If routing succeeds the four new optional
+/// fields on [`PlanStep`] are populated; if routing returns `None` (no match)
+/// or the router itself is unavailable the step is left unchanged.
+///
+/// This function is intentionally best-effort: failures from the router are
+/// logged as warnings and never propagate to the caller.
+pub async fn assign_agents(
+    steps: Vec<PlanStep>,
+    router: &crate::agent_router::AgentRouter,
+) -> Vec<PlanStep> {
+    let mut enriched = steps;
+    for step in enriched.iter_mut() {
+        match router.route_best(&step.description).await {
+            Some(suggestion) => {
+                step.assigned_agent_id   = Some(suggestion.agent_id);
+                step.assigned_agent_name = Some(suggestion.agent_name);
+                step.routing_score       = Some(suggestion.score);
+                step.routing_reasoning   = Some(suggestion.reasoning);
+            }
+            None => {
+                // No matching agent found — leave routing fields as None.
+            }
+        }
+    }
+    enriched
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -195,5 +231,110 @@ Done."#;
         assert!(steps[0].params.is_none());
         assert!(steps[0].result.is_none());
         assert!(matches!(steps[0].status, PlanStepStatus::Pending));
+    }
+
+    #[test]
+    fn test_fallback_plan_routing_fields_are_none() {
+        let steps = fallback_plan("do something");
+        assert!(steps[0].assigned_agent_id.is_none());
+        assert!(steps[0].assigned_agent_name.is_none());
+        assert!(steps[0].routing_score.is_none());
+        assert!(steps[0].routing_reasoning.is_none());
+    }
+
+    #[test]
+    fn test_parse_plan_routing_fields_are_none() {
+        let text = r#"[{"description":"Fetch page","tool":"net.fetch","params":{"url":"https://example.com"}}]"#;
+        let steps = parse_plan(text).unwrap();
+        assert!(steps[0].assigned_agent_id.is_none());
+        assert!(steps[0].assigned_agent_name.is_none());
+        assert!(steps[0].routing_score.is_none());
+        assert!(steps[0].routing_reasoning.is_none());
+    }
+
+    // ── assign_agents ─────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_assign_agents_populates_fields_when_match_found() {
+        use crate::agent_router::AgentRouter;
+        use crate::agent_spec::{AgentSpec, AgentSpecDomain};
+        use crate::events::PlanStepStatus;
+
+        let mut router = AgentRouter::new(None);
+        // Seed the local cache with a spec that has a matching intent.
+        let spec = AgentSpec {
+            id: "bot-search".to_string(),
+            name: "SearchBot".to_string(),
+            version: None,
+            description: None,
+            enabled: None,
+            scene_id: None,
+            allowed_services: None,
+            control_loop: None,
+            primary_skill: Some("search".to_string()),
+            secondary_skills: None,
+            capabilities: None,
+            constraints: None,
+            tools: None,
+            can_delegate_to: None,
+            guardrails: None,
+            system_prompt: None,
+            prompts: None,
+            intents: Some(vec!["search".to_string(), "web".to_string()]),
+            languages: None,
+            response_style: None,
+            domains: Some(vec![AgentSpecDomain { name: "internet".to_string(), score: 0.9 }]),
+            communication: None,
+            orchestration: None,
+            memory: None,
+        };
+        router.seed_cache(vec![spec]);
+
+        let steps = vec![PlanStep {
+            id: "s1".to_string(),
+            index: 0,
+            description: "Search the web for news".to_string(),
+            status: PlanStepStatus::Pending,
+            tool: None,
+            params: None,
+            result: None,
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
+        }];
+
+        let enriched = crate::planner::assign_agents(steps, &router).await;
+        assert!(enriched[0].assigned_agent_id.is_some());
+        assert_eq!(enriched[0].assigned_agent_id.as_deref(), Some("bot-search"));
+        assert_eq!(enriched[0].assigned_agent_name.as_deref(), Some("SearchBot"));
+        assert!(enriched[0].routing_score.is_some());
+        assert!(enriched[0].routing_reasoning.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_assign_agents_leaves_fields_none_when_no_match() {
+        use crate::agent_router::AgentRouter;
+
+        let router = AgentRouter::new(None); // empty cache
+        let steps = vec![PlanStep {
+            id: "s1".to_string(),
+            index: 0,
+            description: "Completely unrelated obscure task xyz123".to_string(),
+            status: PlanStepStatus::Pending,
+            tool: None,
+            params: None,
+            result: None,
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
+        }];
+
+        let enriched = crate::planner::assign_agents(steps, &router).await;
+        assert!(enriched[0].assigned_agent_id.is_none());
+        assert!(enriched[0].assigned_agent_name.is_none());
+        assert!(enriched[0].routing_score.is_none());
+        assert!(enriched[0].routing_reasoning.is_none());
     }
 }

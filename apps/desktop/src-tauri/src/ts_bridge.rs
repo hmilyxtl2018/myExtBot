@@ -127,6 +127,12 @@ impl TsBridge {
         format!("{}{}", self.base_url, path)
     }
 
+    /// Return the configured base URL (used by callers that need to forward it
+    /// to other components such as [`crate::agent_router::AgentRouter`]).
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     fn log_request(&self, method: &str, url: &str) {
         if self.debug {
             tracing::debug!(method, url, "TsBridge → request");
