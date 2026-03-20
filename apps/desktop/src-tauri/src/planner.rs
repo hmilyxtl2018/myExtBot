@@ -54,13 +54,17 @@ fn parse_plan(text: &str) -> Option<Vec<PlanStep>> {
         .into_iter()
         .enumerate()
         .map(|(i, r)| PlanStep {
-            id:          uuid::Uuid::new_v4().to_string(),
-            index:       i,
-            description: r.description,
-            status:      PlanStepStatus::Pending,
-            tool:        r.tool,
-            params:      r.params,
-            result:      None,
+            id:                  uuid::Uuid::new_v4().to_string(),
+            index:               i,
+            description:         r.description,
+            status:              PlanStepStatus::Pending,
+            tool:                r.tool,
+            params:              r.params,
+            result:              None,
+            assigned_agent_id:   None,
+            assigned_agent_name: None,
+            routing_score:       None,
+            routing_reasoning:   None,
         })
         .collect();
     Some(steps)
@@ -69,13 +73,17 @@ fn parse_plan(text: &str) -> Option<Vec<PlanStep>> {
 /// Build a fallback single-step plan when the LLM does not return valid JSON.
 fn fallback_plan(goal: &str) -> Vec<PlanStep> {
     vec![PlanStep {
-        id:          uuid::Uuid::new_v4().to_string(),
-        index:       0,
-        description: goal.to_string(),
-        status:      PlanStepStatus::Pending,
-        tool:        None,
-        params:      None,
-        result:      None,
+        id:                  uuid::Uuid::new_v4().to_string(),
+        index:               0,
+        description:         goal.to_string(),
+        status:              PlanStepStatus::Pending,
+        tool:                None,
+        params:              None,
+        result:              None,
+        assigned_agent_id:   None,
+        assigned_agent_name: None,
+        routing_score:       None,
+        routing_reasoning:   None,
     }]
 }
 
@@ -99,6 +107,30 @@ pub async fn plan(goal: &str) -> Result<Vec<PlanStep>> {
                 resp.text
             );
             Ok(fallback_plan(goal))
+        }
+    }
+}
+
+/// Assign the best-matching agent to each step using `router`.
+///
+/// For each step, a routing query is built from the step description plus the
+/// tool name (if present).  [`crate::agent_router::AgentRouter::route_best`] is
+/// called; on a successful match the four routing fields on the step are
+/// populated.  Steps that receive no match are left unchanged (all `None`).
+pub async fn assign_agents(
+    steps: &mut Vec<PlanStep>,
+    router: &crate::agent_router::AgentRouter,
+) {
+    for step in steps.iter_mut() {
+        let query = match &step.tool {
+            Some(tool) => format!("{} {}", step.description, tool),
+            None => step.description.clone(),
+        };
+        if let Some(suggestion) = router.route_best(&query).await {
+            step.assigned_agent_id   = Some(suggestion.agent_id);
+            step.assigned_agent_name = Some(suggestion.agent_name);
+            step.routing_score       = Some(suggestion.score);
+            step.routing_reasoning   = Some(suggestion.reasoning);
         }
     }
 }

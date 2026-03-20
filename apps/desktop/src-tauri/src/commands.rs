@@ -594,3 +594,29 @@ pub async fn route_agent_for_query(
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Generate an execution plan for `content` and enrich each step with the
+/// best-matching agent assignment via [`crate::planner::assign_agents`].
+///
+/// Creates an [`crate::agent_router::AgentRouter`] backed by the shared
+/// [`TsBridge`] state (cloned cheaply — `reqwest::Client` is reference-
+/// counted).  If the TS Core server is unavailable the router falls back to
+/// local keyword scoring; steps that cannot be matched are returned with all
+/// routing fields set to `None`.
+///
+/// # Arguments
+/// * `content` – natural-language user goal
+#[tauri::command]
+pub async fn plan_with_routing(
+    content: String,
+    bridge: State<'_, TsBridge>,
+) -> Result<Vec<crate::events::PlanStep>, String> {
+    let mut steps = crate::planner::plan(&content)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let router = crate::agent_router::AgentRouter::new(bridge.inner().clone());
+    crate::planner::assign_agents(&mut steps, &router).await;
+
+    Ok(steps)
+}
