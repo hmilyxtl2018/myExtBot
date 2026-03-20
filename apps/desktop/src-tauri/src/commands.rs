@@ -3,12 +3,14 @@
 use tauri::{Manager, State};
 
 use crate::agent::AgentState;
+use crate::agent_router::AgentRouter;
 use crate::agent_spec::{AgentRouteSuggestion, AgentSpec};
 use crate::audit::AuditDb;
 use crate::collab::types::{AgentIdentity, CollabMessage, MsgType, TaskStatus};
 use crate::collab::{CollabBus, TeamRegistry};
-use crate::events::{AgentEvent, AgentStatus, ChatMessage, ToolCallResult};
+use crate::events::{AgentEvent, AgentStatus, ChatMessage, PlanStep, ToolCallResult};
 use crate::permissions::PermissionManager;
+use crate::planner::Planner;
 use crate::ts_bridge::TsBridge;
 
 /// Send a user chat message and kick off the agent.
@@ -51,8 +53,9 @@ pub async fn send_message(
 
     // Spawn the planning + execution pipeline so the IPC call returns immediately.
     tokio::spawn(async move {
-        let agent = app_handle.state::<AgentState>();
-        let db    = app_handle.state::<AuditDb>();
+        let agent  = app_handle.state::<AgentState>();
+        let db     = app_handle.state::<AuditDb>();
+        let bridge = app_handle.state::<crate::ts_bridge::TsBridge>();
 
         // ── 1. Plan ───────────────────────────────────────────────────────────
         let steps = match crate::planner::plan(&content).await {
@@ -85,7 +88,7 @@ pub async fn send_message(
             // a borrow on updated_steps across the await point.
             let step_snapshot = updated_steps[i].clone();
 
-            match crate::executor::execute_step(&step_snapshot, &agent, &db).await {
+            match crate::executor::execute_step(&step_snapshot, &agent, &db, Some(&bridge)).await {
                 Ok(result) => {
                     updated_steps[i].result = Some(result.output.clone());
 
@@ -593,4 +596,29 @@ pub async fn route_agent_for_query(
         .route_query(&query, top_n)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Generate an execution plan for `goal` and enrich each step with AgentSpec
+/// routing information.
+///
+/// This command combines planning and routing into a single IPC call:
+/// 1. Call the planner to break the goal into [`PlanStep`]s.
+/// 2. For each step, ask the [`AgentRouter`] for the best matching agent.
+/// 3. Return the enriched steps (with `assigned_agent_id`, `assigned_agent_name`,
+///    `routing_score`, and `routing_reasoning` populated where possible).
+///
+/// Steps for which no agent is found or routing fails are returned unchanged,
+/// allowing the executor to fall back to local tool/LLM execution.
+///
+/// # Arguments
+/// * `goal` – natural-language description of the user's objective
+#[tauri::command]
+pub async fn plan_with_routing(
+    goal: String,
+    planner: State<'_, Planner>,
+    router: State<'_, AgentRouter>,
+) -> Result<Vec<PlanStep>, String> {
+    let mut steps = planner.plan(&goal).await.map_err(|e| e.to_string())?;
+    planner.assign_agents(&mut steps, &router).await;
+    Ok(steps)
 }

@@ -6,6 +6,9 @@
 //!   the user for approval, then wait for the result via a one-shot channel
 //!   that the [`crate::commands::approve_tool_call`] /
 //!   [`crate::commands::deny_tool_call`] IPC handlers signal.
+//! * **Agent-assigned steps** – if a step has an `assigned_agent_id` it is
+//!   first delegated to that agent via [`crate::ts_bridge::TsBridge`].  If
+//!   delegation fails the step falls back to the local tool/LLM path.
 
 use std::time::Instant;
 
@@ -14,6 +17,7 @@ use anyhow::Result;
 use crate::agent::AgentState;
 use crate::audit::AuditDb;
 use crate::events::{AgentEvent, AgentStatus, PlanStep, RiskLevel, ToolCallRequest};
+use crate::ts_bridge::TsBridge;
 
 /// Outcome of executing one plan step.
 #[derive(Debug)]
@@ -39,10 +43,13 @@ fn tool_risk_level(tool: &str) -> RiskLevel {
     }
 }
 
-/// Execute a single plan step.
+/// Execute a single plan step, delegating to an assigned agent when available.
 ///
 /// # Behaviour
 ///
+/// * If `step.assigned_agent_id` is set, the step is first delegated to that
+///   agent via [`TsBridge::delegate_to_agent`].  If delegation fails the
+///   function logs a warning and falls back to local execution.
 /// * If `step.tool` is `None` the description is sent to the LLM as a task
 ///   and the assistant reply becomes the step output.
 /// * If `step.tool` is `Some(name)` the function emits a
@@ -58,9 +65,52 @@ pub async fn execute_step(
     step: &PlanStep,
     agent: &AgentState,
     db: &AuditDb,
+    bridge: Option<&TsBridge>,
 ) -> Result<StepResult> {
     let start = Instant::now();
 
+    // ── Delegate to assigned agent if one was routed ──────────────────────────
+    if let (Some(agent_id), Some(bridge)) = (step.assigned_agent_id.as_deref(), bridge) {
+        match execute_via_agent(step, agent_id, bridge).await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                tracing::warn!(
+                    step_id = %step.id,
+                    agent_id = %agent_id,
+                    error = %e,
+                    "Agent delegation failed — falling back to local execution"
+                );
+                // Fall through to local execution.
+            }
+        }
+    }
+
+    execute_local(step, agent, db, start).await
+}
+
+/// Delegate a step to an external agent via the TS Core REST API.
+async fn execute_via_agent(
+    step: &PlanStep,
+    agent_id: &str,
+    bridge: &TsBridge,
+) -> anyhow::Result<StepResult> {
+    let start = Instant::now();
+    let output = bridge.delegate_to_agent(agent_id, &step.description).await
+        .map_err(|e| anyhow::anyhow!("Delegation error: {e}"))?;
+    Ok(StepResult {
+        output,
+        tool_used: step.tool.clone(),
+        duration_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
+/// Execute a step locally using the LLM or by emitting a tool-call request.
+async fn execute_local(
+    step: &PlanStep,
+    agent: &AgentState,
+    db: &AuditDb,
+    start: Instant,
+) -> Result<StepResult> {
     match &step.tool {
         // ── Tool-less step: ask the LLM to handle the task ───────────────────
         None => {

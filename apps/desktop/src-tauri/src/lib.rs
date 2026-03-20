@@ -1,5 +1,6 @@
 mod agent;
 mod audit;
+pub mod agent_router;
 pub mod agent_spec;
 mod collab;
 mod commands;
@@ -75,6 +76,12 @@ pub fn run() {
             // Initialize the TS Core bridge client (reads TS_CORE_URL if set).
             let bridge = ts_bridge::TsBridge::new(None);
             app.manage(bridge);
+            // Initialize the AgentRouter backed by its own TsBridge instance.
+            let router_bridge = ts_bridge::TsBridge::new(None);
+            let router = agent_router::AgentRouter::new(router_bridge);
+            app.manage(router);
+            // Initialize the stateless Planner.
+            app.manage(planner::Planner::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -93,6 +100,8 @@ pub fn run() {
             // TS Core bridge
             commands::register_agent_spec,
             commands::route_agent_for_query,
+            // AgentSpec routing + planning
+            commands::plan_with_routing,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

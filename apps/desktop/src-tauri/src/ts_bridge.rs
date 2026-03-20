@@ -68,8 +68,11 @@ fn classify(e: reqwest::Error) -> TsBridgeError {
     if e.is_timeout() {
         return TsBridgeError::Timeout;
     }
-    // Connection refused surfaces as a `reqwest::Error` whose source chain
-    // contains a `hyper` / `std::io::Error` with `ConnectionRefused`.
+    // `is_connect()` covers ECONNREFUSED and other connection-setup failures.
+    if e.is_connect() {
+        return TsBridgeError::ConnectionRefused;
+    }
+    // Fallback: check the error source chain for "connection refused" text.
     if let Some(source) = e.source() {
         let msg = source.to_string();
         if msg.contains("Connection refused") || msg.contains("connection refused") {
@@ -260,6 +263,43 @@ impl TsBridge {
             Ok(Some(suggestion))
         } else {
             Err(TsBridgeError::HttpError(status, body))
+        }
+    }
+
+    /// POST `/api/agents/:id/delegate` — delegate a task to a specific agent
+    /// via TS Core and return the agent's output as a plain string.
+    ///
+    /// If the response body is a JSON object containing an `"output"` string
+    /// field, that field is returned directly.  Otherwise the raw response body
+    /// is returned as-is.  On connection errors the caller should fall back to
+    /// local execution.
+    pub async fn delegate_to_agent(&self, agent_id: &str, task: &str) -> Result<String> {
+        let url = self.url(&format!("/api/agents/{}/delegate", agent_id));
+        let body = serde_json::json!({ "task": task });
+        self.log_request("POST", &url);
+
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(classify)?;
+
+        let status = resp.status();
+        let text = resp.text().await.map_err(classify)?;
+        self.log_response(status.as_u16(), &text);
+
+        if status.is_success() {
+            // Try to extract a top-level "output" string from JSON responses.
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(output) = val.get("output").and_then(|v| v.as_str()) {
+                    return Ok(output.to_string());
+                }
+            }
+            Ok(text)
+        } else {
+            Err(TsBridgeError::HttpError(status, text))
         }
     }
 

@@ -5,6 +5,7 @@
 //! Each step may optionally name a tool to invoke.  If the LLM response
 //! cannot be parsed, a single-step fallback plan is returned instead.
 
+use crate::agent_router::AgentRouter;
 use crate::events::{PlanStep, PlanStepStatus};
 use anyhow::Result;
 use tracing::warn;
@@ -61,6 +62,10 @@ fn parse_plan(text: &str) -> Option<Vec<PlanStep>> {
             tool:        r.tool,
             params:      r.params,
             result:      None,
+            assigned_agent_id:   None,
+            assigned_agent_name: None,
+            routing_score:       None,
+            routing_reasoning:   None,
         })
         .collect();
     Some(steps)
@@ -76,6 +81,10 @@ fn fallback_plan(goal: &str) -> Vec<PlanStep> {
         tool:        None,
         params:      None,
         result:      None,
+        assigned_agent_id:   None,
+        assigned_agent_name: None,
+        routing_score:       None,
+        routing_reasoning:   None,
     }]
 }
 
@@ -103,7 +112,67 @@ pub async fn plan(goal: &str) -> Result<Vec<PlanStep>> {
     }
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── Planner struct ────────────────────────────────────────────────────────────
+
+/// Stateless planner that wraps the free-function planning logic and adds
+/// optional agent-routing enrichment via [`AgentRouter`].
+///
+/// Register this as Tauri managed state to use the `plan_with_routing` command.
+pub struct Planner;
+
+impl Planner {
+    /// Create a new planner instance.
+    pub fn new() -> Self {
+        Planner
+    }
+
+    /// Generate a structured execution plan for `goal` by delegating to the
+    /// module-level [`plan`] function.
+    pub async fn plan(&self, goal: &str) -> Result<Vec<PlanStep>> {
+        plan(goal).await
+    }
+
+    /// Enrich each plan step with agent routing information.
+    ///
+    /// For every step the method builds a routing query from the step's
+    /// description and tool name, then asks the [`AgentRouter`] for the best
+    /// matching agent.  On success the routing fields on the step are
+    /// populated; on failure or when no agent matches the step is left
+    /// unchanged so execution can continue with local fallback behaviour.
+    pub async fn assign_agents(&self, steps: &mut Vec<PlanStep>, router: &AgentRouter) {
+        for step in steps.iter_mut() {
+            let query = match &step.tool {
+                Some(tool) => format!("{} (tool: {})", step.description, tool),
+                None       => step.description.clone(),
+            };
+            match router.route(&query).await {
+                Ok(Some(suggestion)) => {
+                    step.assigned_agent_id   = Some(suggestion.agent_id);
+                    step.assigned_agent_name = Some(suggestion.agent_name);
+                    step.routing_score       = Some(suggestion.score);
+                    step.routing_reasoning   = Some(suggestion.reasoning);
+                }
+                Ok(None) => {
+                    // No agent matched — step will use default/local execution.
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        step_id = %step.id,
+                        error = %e,
+                        "Routing failed for step — continuing without agent assignment"
+                    );
+                    // Continue without assignment — graceful degradation.
+                }
+            }
+        }
+    }
+}
+
+impl Default for Planner {
+    fn default() -> Self {
+        Planner::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -195,5 +264,29 @@ Done."#;
         assert!(steps[0].params.is_none());
         assert!(steps[0].result.is_none());
         assert!(matches!(steps[0].status, PlanStepStatus::Pending));
+        // New routing fields start as None
+        assert!(steps[0].assigned_agent_id.is_none());
+        assert!(steps[0].assigned_agent_name.is_none());
+        assert!(steps[0].routing_score.is_none());
+        assert!(steps[0].routing_reasoning.is_none());
+    }
+
+    // ── Planner struct ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_planner_new_and_default_are_equivalent() {
+        let _p1 = Planner::new();
+        let _p2 = Planner::default();
+        // Both should construct without panic; no assertion needed beyond that.
+    }
+
+    #[test]
+    fn test_parse_plan_routing_fields_start_as_none() {
+        let text = r#"[{"description":"Step","tool":"net.fetch","params":{}}]"#;
+        let steps = parse_plan(text).unwrap();
+        assert!(steps[0].assigned_agent_id.is_none());
+        assert!(steps[0].assigned_agent_name.is_none());
+        assert!(steps[0].routing_score.is_none());
+        assert!(steps[0].routing_reasoning.is_none());
     }
 }
