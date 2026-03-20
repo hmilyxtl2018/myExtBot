@@ -1,5 +1,6 @@
 mod agent;
 mod audit;
+pub mod agent_spec;
 mod collab;
 mod commands;
 mod db;
