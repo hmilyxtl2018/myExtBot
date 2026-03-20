@@ -61,6 +61,17 @@ pub async fn execute_step(
 ) -> Result<StepResult> {
     let start = Instant::now();
 
+    // Log agent routing metadata when available.
+    if let Some(agent_id) = &step.assigned_agent_id {
+        tracing::info!(
+            step_index = step.index,
+            agent_id = %agent_id,
+            agent_name = %step.assigned_agent_name.as_deref().unwrap_or("<unknown>"),
+            routing_score = ?step.routing_score,
+            "Executing step with assigned agent"
+        );
+    }
+
     match &step.tool {
         // ── Tool-less step: ask the LLM to handle the task ───────────────────
         None => {

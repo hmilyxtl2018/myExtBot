@@ -70,6 +70,18 @@ pub struct PlanStep {
     /// Execution result text, filled in after the step completes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<String>,
+    /// ID of the agent assigned to handle this step (populated by routing).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_agent_id: Option<String>,
+    /// Display name of the assigned agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_agent_name: Option<String>,
+    /// Routing score for the agent assignment (higher is better).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing_score: Option<i64>,
+    /// Human-readable reasoning for why this agent was assigned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing_reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -239,6 +251,10 @@ mod tests {
             tool: Some("fs.readFile".into()),
             params: Some(serde_json::json!({"path": "/tmp/foo.txt"})),
             result: Some("file contents".into()),
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
         };
         let json = serde_json::to_value(&step).unwrap();
         assert_eq!(json["tool"], "fs.readFile");
@@ -256,6 +272,10 @@ mod tests {
             tool: None,
             params: None,
             result: None,
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
         };
         let json = serde_json::to_value(&step).unwrap();
         assert!(json.get("tool").is_none(), "tool should be absent when None");
@@ -273,11 +293,73 @@ mod tests {
             tool: Some("net.fetch".into()),
             params: Some(serde_json::json!({"url": "https://example.com"})),
             result: None,
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
         };
         let json = serde_json::to_value(&step).unwrap();
         let back: PlanStep = serde_json::from_value(json).unwrap();
         assert_eq!(back.id, "s3");
         assert_eq!(back.tool.as_deref(), Some("net.fetch"));
         assert!(back.result.is_none());
+    }
+
+    // ── PlanStep routing fields ───────────────────────────────────────────────
+
+    #[test]
+    fn test_plan_step_routing_fields_serialize_when_present() {
+        let step = PlanStep {
+            id: "s4".into(),
+            index: 3,
+            description: "Search papers".into(),
+            status: PlanStepStatus::Pending,
+            tool: None,
+            params: None,
+            result: None,
+            assigned_agent_id: Some("search-agent".into()),
+            assigned_agent_name: Some("Search Agent".into()),
+            routing_score: Some(92),
+            routing_reasoning: Some("Best match for search tasks".into()),
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        assert_eq!(json["assigned_agent_id"], "search-agent");
+        assert_eq!(json["assigned_agent_name"], "Search Agent");
+        assert_eq!(json["routing_score"], 92);
+        assert_eq!(json["routing_reasoning"], "Best match for search tasks");
+    }
+
+    #[test]
+    fn test_plan_step_routing_fields_omitted_when_none() {
+        let step = PlanStep {
+            id: "s5".into(),
+            index: 4,
+            description: "Summarise".into(),
+            status: PlanStepStatus::Pending,
+            tool: None,
+            params: None,
+            result: None,
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        assert!(json.get("assigned_agent_id").is_none());
+        assert!(json.get("assigned_agent_name").is_none());
+        assert!(json.get("routing_score").is_none());
+        assert!(json.get("routing_reasoning").is_none());
+    }
+
+    #[test]
+    fn test_plan_step_deserializes_without_routing_fields() {
+        // Old JSON without routing fields should deserialize with None values.
+        let json_str = r#"{"id":"s6","index":5,"description":"Old step","status":"pending"}"#;
+        let step: PlanStep = serde_json::from_str(json_str).unwrap();
+        assert_eq!(step.id, "s6");
+        assert!(step.assigned_agent_id.is_none());
+        assert!(step.assigned_agent_name.is_none());
+        assert!(step.routing_score.is_none());
+        assert!(step.routing_reasoning.is_none());
     }
 }
