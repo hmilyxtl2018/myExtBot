@@ -3,11 +3,13 @@
 use tauri::{Manager, State};
 
 use crate::agent::AgentState;
+use crate::agent_spec::{AgentRouteSuggestion, AgentSpec};
 use crate::audit::AuditDb;
 use crate::collab::types::{AgentIdentity, CollabMessage, MsgType, TaskStatus};
 use crate::collab::{CollabBus, TeamRegistry};
 use crate::events::{AgentEvent, AgentStatus, ChatMessage, ToolCallResult};
 use crate::permissions::PermissionManager;
+use crate::ts_bridge::TsBridge;
 
 /// Send a user chat message and kick off the agent.
 ///
@@ -519,5 +521,76 @@ pub fn get_collab_messages(
 ) -> Result<Vec<serde_json::Value>, String> {
     registry
         .list_messages(limit, offset)
+        .map_err(|e| e.to_string())
+}
+
+// ── TS Core bridge commands ───────────────────────────────────────────────────
+
+/// Register a full 9-pillar `AgentSpec` with the TS Core `McpServiceListManager`.
+///
+/// The spec is parsed from a JSON string, forwarded to the TS Core REST API
+/// via [`TsBridge`], and also persisted in the local [`TeamRegistry`] for
+/// offline access.
+///
+/// # Arguments
+/// * `spec_json` – JSON-serialised [`AgentSpec`]
+#[tauri::command]
+pub async fn register_agent_spec(
+    spec_json: String,
+    bridge: State<'_, TsBridge>,
+    registry: State<'_, TeamRegistry>,
+) -> Result<(), String> {
+    // 1. Parse the AgentSpec from the supplied JSON.
+    let spec: AgentSpec =
+        serde_json::from_str(&spec_json).map_err(|e| format!("Invalid AgentSpec JSON: {e}"))?;
+
+    // 2. Forward to TS Core via the bridge (best-effort; log but don't fail on
+    //    connection errors so the desktop app works when the server is offline).
+    match bridge.register_agent(&spec).await {
+        Ok(()) => {
+            tracing::debug!(agent_id = %spec.id, "Registered AgentSpec with TS Core");
+        }
+        Err(e) => {
+            tracing::warn!(agent_id = %spec.id, error = %e, "Could not forward AgentSpec to TS Core");
+        }
+    }
+
+    // 3. Also persist a minimal identity record in the local TeamRegistry so
+    //    the agent is discoverable offline without requiring the TS Core server.
+    let identity = AgentIdentity {
+        id: spec.id.clone(),
+        name: spec.name.clone(),
+        role: spec.primary_skill.clone(),
+        endpoint: None,
+        team_id: "team-default".to_string(),
+        is_local: false,
+        last_seen: chrono::Utc::now(),
+    };
+    registry
+        .upsert_agent(&identity)
+        .map_err(|e| format!("Failed to persist AgentSpec locally: {e}"))?;
+
+    Ok(())
+}
+
+/// Route a natural-language query to the best-matching agent(s) via the TS
+/// Core routing endpoint.
+///
+/// Returns a JSON array of [`AgentRouteSuggestion`] objects ranked by score.
+/// When the TS Core server is unreachable the command returns an error so the
+/// caller can fall back gracefully.
+///
+/// # Arguments
+/// * `query` – natural-language task description
+/// * `top_n` – optional cap on the number of suggestions returned
+#[tauri::command]
+pub async fn route_agent_for_query(
+    query: String,
+    top_n: Option<usize>,
+    bridge: State<'_, TsBridge>,
+) -> Result<Vec<AgentRouteSuggestion>, String> {
+    bridge
+        .route_query(&query, top_n)
+        .await
         .map_err(|e| e.to_string())
 }

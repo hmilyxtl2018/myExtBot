@@ -10,6 +10,7 @@ pub mod llm;
 pub mod planner;
 mod permissions;
 pub mod tools;
+pub mod ts_bridge;
 
 use tauri::Manager;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -71,6 +72,9 @@ pub fn run() {
             app.manage(registry);
             let bus = collab::CollabBus::new();
             app.manage(bus);
+            // Initialize the TS Core bridge client (reads TS_CORE_URL if set).
+            let bridge = ts_bridge::TsBridge::new(None);
+            app.manage(bridge);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -86,6 +90,9 @@ pub fn run() {
             commands::update_task_status,
             commands::get_tasks,
             commands::get_collab_messages,
+            // TS Core bridge
+            commands::register_agent_spec,
+            commands::route_agent_for_query,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

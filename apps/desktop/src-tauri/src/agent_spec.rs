@@ -431,6 +431,29 @@ pub struct AgentSpec {
     pub memory: Option<MemoryConfig>,
 }
 
+// ── AgentRouteSuggestion ──────────────────────────────────────────────────────
+
+/// A single routing suggestion returned by the TS Core routing endpoints.
+///
+/// Mirrors the TypeScript `AgentRouteSuggestion` interface from
+/// `src/core/McpServiceListManager`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRouteSuggestion {
+    /// ID of the suggested agent.
+    pub agent_id: String,
+    /// Display name of the suggested agent.
+    pub agent_name: String,
+    /// Relevance score (higher is better).
+    pub score: i64,
+    /// Intent tags that matched the query.
+    pub matched_intents: Vec<String>,
+    /// Domain names that matched the query.
+    pub matched_domains: Vec<String>,
+    /// Human-readable explanation of why this agent was suggested.
+    pub reasoning: String,
+}
+
 // ── From<AgentIdentity> ───────────────────────────────────────────────────────
 
 impl From<crate::collab::AgentIdentity> for AgentSpec {
