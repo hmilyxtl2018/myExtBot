@@ -61,6 +61,16 @@ pub async fn execute_step(
 ) -> Result<StepResult> {
     let start = Instant::now();
 
+    // Log agent assignment if routing was applied to this step.
+    if let Some(ref agent_id) = step.assigned_agent_id {
+        tracing::info!(
+            "Step '{}' routed to agent '{}' (score: {:?})",
+            step.description,
+            agent_id,
+            step.routing_score
+        );
+    }
+
     match &step.tool {
         // ── Tool-less step: ask the LLM to handle the task ───────────────────
         None => {

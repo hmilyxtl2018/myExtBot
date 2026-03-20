@@ -5,6 +5,7 @@
 //! Each step may optionally name a tool to invoke.  If the LLM response
 //! cannot be parsed, a single-step fallback plan is returned instead.
 
+use crate::agent_router::AgentRouter;
 use crate::events::{PlanStep, PlanStepStatus};
 use anyhow::Result;
 use tracing::warn;
@@ -61,6 +62,10 @@ fn parse_plan(text: &str) -> Option<Vec<PlanStep>> {
             tool:        r.tool,
             params:      r.params,
             result:      None,
+            assigned_agent_id:   None,
+            assigned_agent_name: None,
+            routing_score:       None,
+            routing_reasoning:   None,
         })
         .collect();
     Some(steps)
@@ -76,6 +81,10 @@ fn fallback_plan(goal: &str) -> Vec<PlanStep> {
         tool:        None,
         params:      None,
         result:      None,
+        assigned_agent_id:   None,
+        assigned_agent_name: None,
+        routing_score:       None,
+        routing_reasoning:   None,
     }]
 }
 
@@ -99,6 +108,28 @@ pub async fn plan(goal: &str) -> Result<Vec<PlanStep>> {
                 resp.text
             );
             Ok(fallback_plan(goal))
+        }
+    }
+}
+
+/// Enrich plan steps with agent routing assignments.
+///
+/// For each step, queries the [`AgentRouter`] for the best agent match using
+/// the step description (and tool name if present). Steps that fail to route or
+/// have no match retain `None` assignments, so existing execution continues
+/// unchanged.
+pub async fn assign_agents(steps: &mut Vec<PlanStep>, router: &AgentRouter) {
+    for step in steps.iter_mut() {
+        let query = if let Some(ref tool) = step.tool {
+            format!("{} (tool: {})", step.description, tool)
+        } else {
+            step.description.clone()
+        };
+        if let Some(suggestion) = router.route_best(&query).await {
+            step.assigned_agent_id   = Some(suggestion.agent_id);
+            step.assigned_agent_name = Some(suggestion.agent_name);
+            step.routing_score       = Some(suggestion.score);
+            step.routing_reasoning   = Some(suggestion.reasoning);
         }
     }
 }

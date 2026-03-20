@@ -70,6 +70,18 @@ pub struct PlanStep {
     /// Execution result text, filled in after the step completes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<String>,
+    /// ID of the agent assigned to handle this step (from AgentSpec routing).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_agent_id: Option<String>,
+    /// Display name of the assigned agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_agent_name: Option<String>,
+    /// Routing confidence score from the AgentRouter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing_score: Option<i64>,
+    /// Human-readable explanation of why this agent was selected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing_reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -239,6 +251,10 @@ mod tests {
             tool: Some("fs.readFile".into()),
             params: Some(serde_json::json!({"path": "/tmp/foo.txt"})),
             result: Some("file contents".into()),
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
         };
         let json = serde_json::to_value(&step).unwrap();
         assert_eq!(json["tool"], "fs.readFile");
@@ -256,6 +272,10 @@ mod tests {
             tool: None,
             params: None,
             result: None,
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
         };
         let json = serde_json::to_value(&step).unwrap();
         assert!(json.get("tool").is_none(), "tool should be absent when None");
@@ -273,6 +293,10 @@ mod tests {
             tool: Some("net.fetch".into()),
             params: Some(serde_json::json!({"url": "https://example.com"})),
             result: None,
+            assigned_agent_id: None,
+            assigned_agent_name: None,
+            routing_score: None,
+            routing_reasoning: None,
         };
         let json = serde_json::to_value(&step).unwrap();
         let back: PlanStep = serde_json::from_value(json).unwrap();

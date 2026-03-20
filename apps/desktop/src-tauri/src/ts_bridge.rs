@@ -88,6 +88,7 @@ pub type Result<T> = std::result::Result<T, TsBridgeError>;
 /// Holds a `reqwest::Client` with a pre-configured timeout and the resolved
 /// base URL.  Intended to be registered as Tauri managed state so commands
 /// can share a single client instance.
+#[derive(Clone)]
 pub struct TsBridge {
     base_url: String,
     client: reqwest::Client,

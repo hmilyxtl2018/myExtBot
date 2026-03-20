@@ -1,5 +1,6 @@
 mod agent;
 mod audit;
+pub mod agent_router;
 pub mod agent_spec;
 mod collab;
 mod commands;
@@ -93,6 +94,7 @@ pub fn run() {
             // TS Core bridge
             commands::register_agent_spec,
             commands::route_agent_for_query,
+            commands::plan_with_routing,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

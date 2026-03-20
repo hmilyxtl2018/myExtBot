@@ -594,3 +594,34 @@ pub async fn route_agent_for_query(
         .await
         .map_err(|e| e.to_string())
 }
+
+// ── AgentSpec routing + planning command ──────────────────────────────────────
+
+/// Generate an execution plan for `goal` and enrich each step with
+/// the best matching agent from the [`AgentRouter`].
+///
+/// 1. Calls [`crate::planner::plan`] to generate a `Vec<PlanStep>`.
+/// 2. Creates an [`crate::agent_router::AgentRouter`] backed by the managed
+///    [`TsBridge`] and calls [`crate::planner::assign_agents`] on the steps.
+/// 3. Returns the enriched steps.  Steps that cannot be routed retain
+///    `None` assignment fields so execution continues unaffected.
+///
+/// # Arguments
+/// * `goal` – natural-language goal description
+#[tauri::command]
+pub async fn plan_with_routing(
+    goal: String,
+    bridge: State<'_, TsBridge>,
+) -> Result<Vec<crate::events::PlanStep>, String> {
+    // 1. Generate the plan.
+    let mut steps = crate::planner::plan(&goal)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 2. Assign agents via the router (falls back gracefully if TS Core is down).
+    let router = crate::agent_router::AgentRouter::new(bridge.inner().clone());
+    crate::planner::assign_agents(&mut steps, &router).await;
+
+    // 3. Return enriched steps.
+    Ok(steps)
+}
