@@ -271,6 +271,40 @@ async fn run_tool(tool: &str, params: &serde_json::Value) -> anyhow::Result<serd
             let body    = params["body"].as_str();
             crate::tools::net::fetch(url, method, headers, body).await
         }
+        "desktop.screenshot" => {
+            let display = params["display"].as_u64().unwrap_or(0) as u32;
+            crate::tools::desktop::screenshot(display).await
+        }
+        "desktop.clickRectCenter" => {
+            let x = params["x"]
+                .as_i64()
+                .ok_or_else(|| anyhow::anyhow!("desktop.clickRectCenter: missing `x` param"))?
+                as i32;
+            let y = params["y"]
+                .as_i64()
+                .ok_or_else(|| anyhow::anyhow!("desktop.clickRectCenter: missing `y` param"))?
+                as i32;
+            let width = params["width"]
+                .as_i64()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("desktop.clickRectCenter: missing `width` param")
+                })?
+                as i32;
+            let height = params["height"]
+                .as_i64()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("desktop.clickRectCenter: missing `height` param")
+                })?
+                as i32;
+            crate::tools::desktop::click_rect_center(x, y, width, height).await
+        }
+        "desktop.ocrCloud" => {
+            let image_b64 = params["image_b64"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("desktop.ocrCloud: missing `image_b64` param"))?;
+            let prompt = params["prompt"].as_str();
+            crate::tools::desktop::ocr_cloud(image_b64, prompt).await
+        }
         other => Err(anyhow::anyhow!(
             "Tool '{other}' execution is not yet implemented"
         )),
