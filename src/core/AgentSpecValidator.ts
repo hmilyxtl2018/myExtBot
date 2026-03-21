@@ -111,6 +111,41 @@ export function validateAgentSpec(
       if (g["requireHumanApproval"] !== undefined && typeof g["requireHumanApproval"] !== "boolean") {
         errors.push("Pillar 4: guardrails.requireHumanApproval must be a boolean if present");
       }
+      if (g["maxCostPerTask"] !== undefined) {
+        if (typeof g["maxCostPerTask"] !== "number" || g["maxCostPerTask"] <= 0) {
+          errors.push("Pillar 4: guardrails.maxCostPerTask must be a positive number if present");
+        }
+      }
+      if (g["approvalRequiredTools"] !== undefined) {
+        if (!Array.isArray(g["approvalRequiredTools"])) {
+          errors.push("Pillar 4: guardrails.approvalRequiredTools must be an array if present");
+        } else {
+          (g["approvalRequiredTools"] as unknown[]).forEach((tool, i) => {
+            if (typeof tool !== "string") {
+              errors.push(`Pillar 4: guardrails.approvalRequiredTools[${i}] must be a string`);
+            }
+          });
+        }
+      }
+      if (g["bannedPatterns"] !== undefined) {
+        if (!Array.isArray(g["bannedPatterns"])) {
+          errors.push("Pillar 4: guardrails.bannedPatterns must be an array if present");
+        } else {
+          (g["bannedPatterns"] as unknown[]).forEach((pat, i) => {
+            if (typeof pat !== "string") {
+              errors.push(`Pillar 4: guardrails.bannedPatterns[${i}] must be a string`);
+            } else {
+              try {
+                new RegExp(pat);
+              } catch {
+                errors.push(
+                  `Pillar 4: guardrails.bannedPatterns[${i}] is not a valid regex: "${pat}"`
+                );
+              }
+            }
+          });
+        }
+      }
     }
   }
 

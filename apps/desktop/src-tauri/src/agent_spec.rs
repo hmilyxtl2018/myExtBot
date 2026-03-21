@@ -79,9 +79,18 @@ pub struct AgentSpecGuardrails {
     /// Maximum monetary cost allowed per call in USD (must be > 0).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_cost_per_call: Option<f64>,
+    /// Maximum cumulative cost for all tool calls within a single task (must be > 0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_cost_per_task: Option<f64>,
     /// Whether a human must approve the action before execution.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub require_human_approval: Option<bool>,
+    /// Tool names that require explicit human approval before execution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_required_tools: Option<Vec<String>>,
+    /// Custom regex patterns (as strings) to block in tool call inputs and outputs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub banned_patterns: Option<Vec<String>>,
 }
 
 // ── Pillar 5: Prompts ─────────────────────────────────────────────────────────
@@ -556,7 +565,10 @@ mod tests {
         let g = AgentSpecGuardrails {
             max_tokens_per_call: Some(4096),
             max_cost_per_call: Some(0.05),
+            max_cost_per_task: None,
             require_human_approval: Some(true),
+            approval_required_tools: None,
+            banned_patterns: None,
         };
         let json = serde_json::to_value(&g).unwrap();
         // snake_case Rust fields must appear as camelCase JSON keys
@@ -827,7 +839,10 @@ mod tests {
             guardrails: Some(AgentSpecGuardrails {
                 max_tokens_per_call: Some(8192),
                 max_cost_per_call: Some(0.10),
+                max_cost_per_task: None,
                 require_human_approval: Some(false),
+                approval_required_tools: None,
+                banned_patterns: None,
             }),
             system_prompt: Some("You are a research assistant.".to_string()),
             prompts: Some(AgentSpecPrompts {

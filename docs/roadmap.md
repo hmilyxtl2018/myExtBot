@@ -68,7 +68,7 @@ This document tracks what has been delivered, what is in progress, and what come
 - Implement lazy cleanup on `extractTrace()` and/or a background `setInterval` sweep.
 - Expired entries are soft-deleted in KnowledgeDbStore (retain for audit, exclude from search).
 
-### 4.3 GuardrailsEnforcer
+### 4.3 GuardrailsEnforcer ✅ Done (#55)
 
 - Input/output content filtering (block PII, secrets, banned patterns).
 - Per-agent cost ceiling — halt tool execution when an agent exceeds its `guardrails.maxCostPerTask`.
