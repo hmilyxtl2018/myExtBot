@@ -74,22 +74,22 @@ export class AgentRouter {
         // c. primarySkill (+2)
         if (agent.primarySkill) {
           const skill = agent.primarySkill.toLowerCase();
-          if (tokens.some((t) => skill.split(/[\s\-]+/).includes(t))) {
+          if (tokens.some((t) => skill.split(/[\s-]+/).includes(t))) {
             score += 2;
           }
         }
 
         // d. capabilities (+1 each)
         for (const cap of agent.capabilities ?? []) {
-          const capWords = cap.toLowerCase().split(/[\s\-]+/);
+          const capWords = cap.toLowerCase().split(/[\s-]+/);
           if (tokens.some((t) => capWords.includes(t))) {
             score += 1;
           }
         }
 
         // e. name / description (+1)
-        const nameWords = agent.name.toLowerCase().split(/[\s\-]+/);
-        const descWords = (agent.description ?? "").toLowerCase().split(/[\s\-]+/);
+        const nameWords = agent.name.toLowerCase().split(/[\s-]+/);
+        const descWords = (agent.description ?? "").toLowerCase().split(/[\s-]+/);
         if (tokens.some((t) => nameWords.includes(t) || descWords.includes(t))) {
           score += 1;
         }

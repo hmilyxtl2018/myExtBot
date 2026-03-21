@@ -81,7 +81,7 @@ export function handleCostRoutes(
     if (query.offset) filter.offset = parseInt(query.offset, 10);
 
     const entries = manager.getCostLedger().query(filter);
-    const { limit, offset, ...countFilter } = filter;
+    const { limit: _limit, offset: _offset, ...countFilter } = filter;
     const total = manager.getCostLedger().count(countFilter);
 
     res.writeHead(200);
