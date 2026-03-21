@@ -804,8 +804,14 @@ export interface AgentSpecGuardrails {
   maxTokensPerCall?: number;
   /** Maximum monetary cost allowed per call in USD (must be > 0). */
   maxCostPerCall?: number;
+  /** Maximum cumulative cost for all tool calls within a single task (must be > 0). */
+  maxCostPerTask?: number;
   /** Whether a human must approve the action before execution. */
   requireHumanApproval?: boolean;
+  /** List of tool names that require explicit human approval before execution. */
+  approvalRequiredTools?: string[];
+  /** Custom regex patterns (as strings) to block in tool call inputs and outputs. */
+  bannedPatterns?: string[];
 }
 
 /** Prompt templates for an AgentSpec (Pillar 5). */

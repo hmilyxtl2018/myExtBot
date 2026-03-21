@@ -38,6 +38,7 @@ import { LineageExporter } from "./LineageExporter";
 import { validateAgentSpec } from "./AgentSpecValidator";
 import { KnowledgeDbStore } from "./KnowledgeDbStore";
 import { MemoryAdapter } from "./MemoryAdapter";
+import { GuardrailsEnforcer, withGuardrails } from "./GuardrailsEnforcer";
 
 /**
  * McpServiceListManager is the single source of truth for all MCP services and
@@ -75,6 +76,7 @@ export class McpServiceListManager {
   private pipelineRunner = new PipelineRunner(this);
   private costLedger = new CostLedger();
   private contractEnforcer = new ContractEnforcer(this.costLedger);
+  private guardrailsEnforcer = new GuardrailsEnforcer();
   private agentRouter = new AgentRouter(this);
   private triggerEngine = new SceneTriggerEngine(this);
   private lineageBuilder = new LineageGraphBuilder();
@@ -416,15 +418,19 @@ export class McpServiceListManager {
     };
 
     try {
-      if (contract) {
-        let fallbackExecute: (() => Promise<ToolResult>) | undefined;
-        if (contract.fallback?.agentId) {
-          const fallbackAgentId = contract.fallback.agentId;
-          fallbackExecute = () => this.dispatchAs(fallbackAgentId, toolCall);
+      const guardrails = this.guardrailsEnforcer.getGuardrails(agent);
+      const contractEnforcedExecute = async (): Promise<ToolResult> => {
+        if (contract) {
+          let fallbackExecute: (() => Promise<ToolResult>) | undefined;
+          if (contract.fallback?.agentId) {
+            const fallbackAgentId = contract.fallback.agentId;
+            fallbackExecute = () => this.dispatchAs(fallbackAgentId, toolCall);
+          }
+          return this.contractEnforcer.enforce(contract, agentId, toolCall.toolName, executeCall, fallbackExecute);
         }
-        return await this.contractEnforcer.enforce(contract, agentId, toolCall.toolName, executeCall, fallbackExecute);
-      }
-      return await executeCall();
+        return executeCall();
+      };
+      return await withGuardrails(this.guardrailsEnforcer, agentId, toolCall, guardrails, contractEnforcedExecute);
     } finally {
       this.lifecycleManager.markTaskComplete(agentId);
     }
@@ -489,45 +495,52 @@ export class McpServiceListManager {
       return { success: false, error: `Target agent "${toAgentId}" is not registered.` };
     }
 
-    // Use CommunicationBridge for permission check and execution
-    const { allowed, result } = await this.communicationBridge.send(
-      fromAgentId,
-      toAgentId,
-      toolCall,
-      "delegation"
-    );
+    // Apply guardrails from the delegating agent before executing
+    const guardrails = this.guardrailsEnforcer.getGuardrails(fromAgent);
 
-    if (!allowed) {
-      // CommunicationBridge.canDelegate checks both communication.delegationTargets
-      // and legacy canDelegateTo, so !allowed means the agent is truly not permitted.
+    const bridgeExecute = async (): Promise<ToolResult> => {
+      // Use CommunicationBridge for permission check and execution
+      const { allowed, result } = await this.communicationBridge.send(
+        fromAgentId,
+        toAgentId,
+        toolCall,
+        "delegation"
+      );
+
+      if (!allowed) {
+        // CommunicationBridge.canDelegate checks both communication.delegationTargets
+        // and legacy canDelegateTo, so !allowed means the agent is truly not permitted.
+        const entry: DelegationLogEntry = {
+          timestamp: new Date().toISOString(),
+          fromAgentId,
+          toAgentId,
+          toolName: toolCall.toolName,
+          arguments: toolCall.arguments,
+          success: false,
+          error: `Agent "${fromAgentId}" is not permitted to delegate to "${toAgentId}".`,
+        };
+        this.appendDelegationLog(entry);
+        void this.logWriter.append(entry);
+        return { success: false, error: entry.error };
+      }
+
+      const finalResult = result ?? { success: false, error: "No result from bridge" };
       const entry: DelegationLogEntry = {
         timestamp: new Date().toISOString(),
         fromAgentId,
         toAgentId,
         toolName: toolCall.toolName,
         arguments: toolCall.arguments,
-        success: false,
-        error: `Agent "${fromAgentId}" is not permitted to delegate to "${toAgentId}".`,
+        success: finalResult.success,
+        output: finalResult.output,
+        error: finalResult.error,
       };
       this.appendDelegationLog(entry);
       void this.logWriter.append(entry);
-      return { success: false, error: entry.error };
-    }
-
-    const finalResult = result ?? { success: false, error: "No result from bridge" };
-    const entry: DelegationLogEntry = {
-      timestamp: new Date().toISOString(),
-      fromAgentId,
-      toAgentId,
-      toolName: toolCall.toolName,
-      arguments: toolCall.arguments,
-      success: finalResult.success,
-      output: finalResult.output,
-      error: finalResult.error,
+      return finalResult;
     };
-    this.appendDelegationLog(entry);
-    void this.logWriter.append(entry);
-    return finalResult;
+
+    return withGuardrails(this.guardrailsEnforcer, fromAgentId, toolCall, guardrails, bridgeExecute);
   }
 
   // ── SLA Contract management ───────────────────────────────────────────────
@@ -550,6 +563,11 @@ export class McpServiceListManager {
   /** List all registered SLA contracts. */
   listContracts(): AgentContract[] {
     return [...this.contracts.values()];
+  }
+
+  /** Get the GuardrailsEnforcer instance (for approve/deny and introspection). */
+  getGuardrailsEnforcer(): GuardrailsEnforcer {
+    return this.guardrailsEnforcer;
   }
 
   /**
