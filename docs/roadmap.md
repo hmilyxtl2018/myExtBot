@@ -93,9 +93,9 @@ This document tracks what has been delivered, what is in progress, and what come
 
 ### 5.1 CI/CD Pipeline
 
-- GitHub Actions workflow: lint → type-check (`tsc --noEmit`) → unit tests (`jest`) → build.
-- Gate PRs on passing CI.
-- Automate Tauri desktop builds for Windows (and optionally macOS/Linux).
+- GitHub Actions workflow: lint → type-check (`tsc --noEmit`) → unit tests (`jest`) → build. ✅ Done (#53)
+- Gate PRs on passing CI. ✅ Done (#53)
+- Automate Tauri desktop builds for Windows (and optionally macOS/Linux). ✅ Done (#53)
 
 ### 5.2 API Documentation
 
