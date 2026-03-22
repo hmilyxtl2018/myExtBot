@@ -226,6 +226,36 @@ describe("Pillar 5 — Prompts", () => {
     const r = validateAgentSpec(minimalSpec());
     expect(r.errors.some((e) => e.includes("Pillar 5"))).toBe(false);
   });
+
+  it("accepts prompts.preamble as a string", () => {
+    const r = validateAgentSpec({ ...minimalSpec(), prompts: { preamble: "Context: you assist with code." } });
+    expect(r.valid).toBe(true);
+  });
+
+  it("rejects prompts.preamble that is not a string", () => {
+    const r = validateAgentSpec({ ...minimalSpec(), prompts: { preamble: 123 } });
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes("prompts.preamble"))).toBe(true);
+  });
+
+  it("accepts prompts.suffix as a string", () => {
+    const r = validateAgentSpec({ ...minimalSpec(), prompts: { suffix: "Always be concise." } });
+    expect(r.valid).toBe(true);
+  });
+
+  it("rejects prompts.suffix that is not a string", () => {
+    const r = validateAgentSpec({ ...minimalSpec(), prompts: { suffix: false } });
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes("prompts.suffix"))).toBe(true);
+  });
+
+  it("accepts prompts with all three fields as strings", () => {
+    const r = validateAgentSpec({
+      ...minimalSpec(),
+      prompts: { preamble: "Pre.", system: "You are a bot.", suffix: "Be brief." },
+    });
+    expect(r.valid).toBe(true);
+  });
 });
 
 // ── Pillar 6 — Intent & Persona ───────────────────────────────────────────────

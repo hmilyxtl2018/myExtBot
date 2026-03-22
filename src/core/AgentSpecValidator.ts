@@ -158,6 +158,12 @@ export function validateAgentSpec(
       if (p["system"] !== undefined && typeof p["system"] !== "string") {
         errors.push("Pillar 5: prompts.system must be a string if present");
       }
+      if (p["preamble"] !== undefined && typeof p["preamble"] !== "string") {
+        errors.push("Pillar 5: prompts.preamble must be a string if present");
+      }
+      if (p["suffix"] !== undefined && typeof p["suffix"] !== "string") {
+        errors.push("Pillar 5: prompts.suffix must be a string if present");
+      }
     }
   }
 

@@ -818,6 +818,10 @@ export interface AgentSpecGuardrails {
 export interface AgentSpecPrompts {
   /** System prompt injected to the LLM for this agent. */
   system?: string;
+  /** Text prepended before the system prompt when composing the final prompt. */
+  preamble?: string;
+  /** Text appended after the system prompt when composing the final prompt. */
+  suffix?: string;
 }
 
 /** A scored domain entry for Pillar 6 (Intent & Persona). */

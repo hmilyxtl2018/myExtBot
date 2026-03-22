@@ -2,8 +2,9 @@
 //!
 //! The planner sends the user's goal to the configured LLM with a system
 //! prompt that instructs the model to respond with a JSON array of steps.
-//! Each step may optionally name a tool to invoke.  If the LLM response
-//! cannot be parsed, a single-step fallback plan is returned instead.
+//! An optional agent system prompt can be prepended to inject the agent's
+//! persona.  Each step may optionally name a tool to invoke.  If the LLM
+//! response cannot be parsed, a single-step fallback plan is returned instead.
 
 use crate::events::{PlanStep, PlanStepStatus};
 use anyhow::Result;
@@ -92,11 +93,17 @@ fn fallback_plan(goal: &str) -> Vec<PlanStep> {
 /// Sends a chat completion request whose system prompt instructs the model to
 /// reply with a JSON array of steps.  If the response cannot be parsed, a
 /// single-step fallback plan is returned so the caller can always proceed.
-pub async fn plan(goal: &str) -> Result<Vec<PlanStep>> {
-    // Combine system prompt + user goal into a single message because
-    // `llm::complete` only accepts a single user message string.
-    let prompt = format!("{PLANNING_SYSTEM_PROMPT}\n\nGoal: {goal}");
-    let resp = crate::llm::complete(&prompt).await?;
+///
+/// If `agent_system_prompt` is provided, it is prepended to the planning system
+/// prompt (separated by a blank line) so the agent's persona is preserved.
+pub async fn plan(goal: &str, agent_system_prompt: Option<&str>) -> Result<Vec<PlanStep>> {
+    let system = match agent_system_prompt {
+        Some(agent_prompt) if !agent_prompt.is_empty() => {
+            format!("{agent_prompt}\n\n{PLANNING_SYSTEM_PROMPT}")
+        }
+        _ => PLANNING_SYSTEM_PROMPT.to_string(),
+    };
+    let resp = crate::llm::complete_with_system(&system, goal).await?;
 
     match parse_plan(&resp.text) {
         Some(steps) => Ok(steps),

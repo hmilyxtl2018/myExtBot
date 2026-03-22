@@ -1,6 +1,7 @@
 //! Execution layer: runs a single [`PlanStep`] produced by the planner.
 //!
 //! * **Tool-less steps** – the description is treated as an LLM task; we call
+//!   [`crate::llm::complete_with_system`] (if a system prompt is provided) or
 //!   [`crate::llm::complete`] and return the assistant reply as the output.
 //! * **Tool steps** – we emit a [`AgentEvent::ToolCallRequest`] event to ask
 //!   the user for approval, then wait for the result via a one-shot channel
@@ -44,7 +45,9 @@ fn tool_risk_level(tool: &str) -> RiskLevel {
 /// # Behaviour
 ///
 /// * If `step.tool` is `None` the description is sent to the LLM as a task
-///   and the assistant reply becomes the step output.
+///   and the assistant reply becomes the step output.  When `system_prompt` is
+///   provided the LLM call uses [`crate::llm::complete_with_system`] so the
+///   agent's persona is injected.
 /// * If `step.tool` is `Some(name)` the function emits a
 ///   [`AgentEvent::ToolCallRequest`] event (transitioning the agent to
 ///   `WaitingApproval`) and **immediately returns** a placeholder
@@ -58,6 +61,7 @@ pub async fn execute_step(
     step: &PlanStep,
     agent: &AgentState,
     db: &AuditDb,
+    system_prompt: Option<&str>,
 ) -> Result<StepResult> {
     let start = Instant::now();
 
@@ -77,7 +81,10 @@ pub async fn execute_step(
         None => {
             agent.transition(AgentStatus::Thinking)?;
 
-            let resp = crate::llm::complete(&step.description).await?;
+            let resp = match system_prompt.filter(|s| !s.is_empty()) {
+                Some(sp) => crate::llm::complete_with_system(sp, &step.description).await?,
+                None     => crate::llm::complete(&step.description).await?,
+            };
 
             let duration_ms = start.elapsed().as_millis() as u64;
             let _ = db.log_model_usage(
