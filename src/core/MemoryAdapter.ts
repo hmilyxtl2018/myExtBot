@@ -1,6 +1,8 @@
 import type { McpServiceListManager } from "./McpServiceListManager";
 import type { KnowledgeDbStore } from "./KnowledgeDbStore";
 import type { CostSummary, ServiceHealthRecord } from "./types";
+import type { EmbeddingProvider } from "./EmbeddingProvider";
+import { cosineSimilarity } from "./vectorUtils";
 
 export interface AgentHealthSummary {
   agentId: string;
@@ -37,12 +39,22 @@ export class MemoryAdapter {
   /** In-memory K-DB stub — replace with real storage backend. */
   private knowledgeDb = new Map<string, KnowledgeEntry[]>();
 
+  /**
+   * Embeddings for the in-memory path.
+   * Outer key: agentId; inner key: entry.id; value: embedding vector.
+   */
+  private embeddingStore = new Map<string, Map<string, number[]>>();
+
+  /** Monotonic counter appended to IDs to guarantee uniqueness within the same millisecond. */
+  private idSeq = 0;
+
   /** Handle returned by setInterval for the background auto-retire sweep. */
   private sweepIntervalHandle: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private readonly manager: McpServiceListManager,
     private readonly store?: KnowledgeDbStore,
+    private readonly embeddingProvider?: EmbeddingProvider,
   ) {}
 
   // ── private helpers ────────────────────────────────────────────────────────
@@ -132,13 +144,16 @@ export class MemoryAdapter {
    *
    * When a `KnowledgeDbStore` is injected, also runs lazy autoRetire cleanup
    * based on `autoRetireAfterMinutes` config.
+   *
+   * When an `EmbeddingProvider` is configured, generates an embedding for
+   * the content and stores it alongside the entry for semantic search.
    */
-  extractTrace(
+  async extractTrace(
     agentId: string,
     content: string,
     confidence: number,
     tags?: string[]
-  ): KnowledgeEntry | null {
+  ): Promise<KnowledgeEntry | null> {
     const agent = this.manager.getAgent(agentId);
     const config = agent?.memory?.knowledgeDb;
     if (!config?.enabled) return null;
@@ -149,7 +164,7 @@ export class MemoryAdapter {
       : undefined;
 
     const entry: KnowledgeEntry = {
-      id: `kdb-${agentId}-${Date.now()}`,
+      id: `kdb-${agentId}-${Date.now()}-${this.idSeq++}`,
       agentId,
       content,
       confidence,
@@ -163,10 +178,15 @@ export class MemoryAdapter {
       config.autoPromoteThreshold === undefined ||
       confidence >= config.autoPromoteThreshold;
     if (shouldPromote) {
+      // Generate embedding if a provider is available.
+      const embedding = this.embeddingProvider
+        ? await this.embeddingProvider.embed(content)
+        : undefined;
+
       if (this.store) {
         // Lazy cleanup: purge expired entries before inserting the new one.
         this.store.deleteExpired(agentId);
-        this.store.insert(agentId, entry);
+        this.store.insert(agentId, entry, embedding);
         const maxEntries = config.maxEntries ?? 1000;
         this.store.prune(agentId, maxEntries);
       } else {
@@ -176,8 +196,20 @@ export class MemoryAdapter {
         current.push(entry);
         // Prune if over max
         const maxEntries = config.maxEntries ?? 1000;
-        while (current.length > maxEntries) current.shift();
+        while (current.length > maxEntries) {
+          const removed = current.shift();
+          if (removed) {
+            this.embeddingStore.get(agentId)?.delete(removed.id);
+          }
+        }
         this.knowledgeDb.set(agentId, current);
+        // Store embedding in the in-memory embedding store.
+        if (embedding) {
+          if (!this.embeddingStore.has(agentId)) {
+            this.embeddingStore.set(agentId, new Map());
+          }
+          this.embeddingStore.get(agentId)!.set(entry.id, embedding);
+        }
       }
       return entry;
     }
@@ -187,10 +219,35 @@ export class MemoryAdapter {
 
   /**
    * Look up similar knowledge entries for RAG retrieval.
-   * Uses simple keyword matching; replace with embedding-based similarity in production.
-   * Expired entries are filtered out on both the SQLite and in-memory paths.
+   *
+   * When an `EmbeddingProvider` is configured:
+   *  1. Generates an embedding for `query`.
+   *  2. Uses cosine-similarity search via `store.searchSemantic()` (SQLite path)
+   *     or the in-memory embedding store (Map path).
+   *
+   * Falls back to keyword (LIKE / substring) matching when no provider is
+   * configured, preserving backwards-compatible behaviour.
    */
-  lookupSimilar(agentId: string, query: string, topK = 5): KnowledgeEntry[] {
+  async lookupSimilar(agentId: string, query: string, topK = 5): Promise<KnowledgeEntry[]> {
+    if (this.embeddingProvider) {
+      const queryEmbedding = await this.embeddingProvider.embed(query);
+      if (this.store) {
+        return this.store.searchSemantic(agentId, queryEmbedding, topK);
+      }
+      // In-memory semantic path
+      this.purgeExpiredInMemory(agentId);
+      const entries = this.knowledgeDb.get(agentId) ?? [];
+      const agentEmbs = this.embeddingStore.get(agentId);
+      if (!agentEmbs) return [];
+
+      const scored = entries
+        .filter((e) => agentEmbs.has(e.id))
+        .map((e) => ({ entry: e, sim: cosineSimilarity(queryEmbedding, agentEmbs.get(e.id)!) }));
+      scored.sort((a, b) => b.sim - a.sim);
+      return scored.slice(0, topK).map((s) => s.entry);
+    }
+
+    // Keyword fallback
     if (this.store) {
       return this.store.query(agentId, query, topK);
     }
@@ -198,6 +255,81 @@ export class MemoryAdapter {
     const entries = this.knowledgeDb.get(agentId) ?? [];
     const q = query.toLowerCase();
     return entries.filter((e) => e.content.toLowerCase().includes(q)).slice(0, topK);
+  }
+
+  /**
+   * Hybrid search combining keyword and semantic results with configurable
+   * weighting.  Falls back to keyword-only search when no `EmbeddingProvider`
+   * is configured.
+   *
+   * Scoring model:
+   *  - A result found by keyword matching receives `keywordWeight` points.
+   *  - A result found by semantic search receives `semanticWeight × cosineSim` points.
+   *  - Both contributions are summed when a result appears in both sets.
+   *
+   * @param keywordWeight   Weight for keyword hits (default 0.3).
+   * @param semanticWeight  Weight for semantic similarity score (default 0.7).
+   */
+  async lookupHybrid(
+    agentId: string,
+    query: string,
+    topK = 5,
+    keywordWeight = 0.3,
+    semanticWeight = 0.7,
+  ): Promise<KnowledgeEntry[]> {
+    if (!this.embeddingProvider) {
+      // No provider — degrade gracefully to keyword search.
+      if (this.store) return this.store.query(agentId, query, topK);
+      this.purgeExpiredInMemory(agentId);
+      const entries = this.knowledgeDb.get(agentId) ?? [];
+      const q = query.toLowerCase();
+      return entries.filter((e) => e.content.toLowerCase().includes(q)).slice(0, topK);
+    }
+
+    const candidateK = Math.max(topK * 3, 20);
+
+    // Keyword candidates
+    const keywordResults: KnowledgeEntry[] = this.store
+      ? this.store.query(agentId, query, candidateK)
+      : (() => {
+          this.purgeExpiredInMemory(agentId);
+          const entries = this.knowledgeDb.get(agentId) ?? [];
+          const q = query.toLowerCase();
+          return entries.filter((e) => e.content.toLowerCase().includes(q)).slice(0, candidateK);
+        })();
+
+    // Semantic candidates with raw similarity scores
+    const queryEmbedding = await this.embeddingProvider.embed(query);
+    const semanticScored = this.store
+      ? this.store.searchSemanticWithScores(agentId, queryEmbedding, candidateK)
+      : (() => {
+          this.purgeExpiredInMemory(agentId);
+          const entries = this.knowledgeDb.get(agentId) ?? [];
+          const agentEmbs = this.embeddingStore.get(agentId);
+          if (!agentEmbs) return [];
+          return entries
+            .filter((e) => agentEmbs.has(e.id))
+            .map((e) => ({ entry: e, score: cosineSimilarity(queryEmbedding, agentEmbs.get(e.id)!) }));
+        })();
+
+    // Merge into a single score map keyed by entry id.
+    const scoreMap = new Map<string, { entry: KnowledgeEntry; hybridScore: number }>();
+
+    for (const entry of keywordResults) {
+      scoreMap.set(entry.id, { entry, hybridScore: keywordWeight });
+    }
+
+    for (const { entry, score } of semanticScored) {
+      const existing = scoreMap.get(entry.id);
+      if (existing) {
+        existing.hybridScore += semanticWeight * score;
+      } else {
+        scoreMap.set(entry.id, { entry, hybridScore: semanticWeight * score });
+      }
+    }
+
+    const sorted = [...scoreMap.values()].sort((a, b) => b.hybridScore - a.hybridScore);
+    return sorted.slice(0, topK).map((item) => item.entry);
   }
 
   getKnowledgeDb(agentId: string): KnowledgeEntry[] {

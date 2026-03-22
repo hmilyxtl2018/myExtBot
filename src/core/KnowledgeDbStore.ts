@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
 import type { KnowledgeEntry } from "./MemoryAdapter";
+import { cosineSimilarity } from "./vectorUtils";
 
 interface KnowledgeRow {
   id: number;
@@ -13,6 +14,8 @@ interface KnowledgeRow {
   expiresAt: string | null;
   metadata: string | null;
   retiredAt: string | null;
+  /** JSON-serialised Float32 array, or null if no embedding is stored. */
+  embedding: string | null;
 }
 
 /**
@@ -62,16 +65,19 @@ export class KnowledgeDbStore {
         createdAt TEXT    NOT NULL,
         expiresAt TEXT,
         metadata  TEXT,
-        retiredAt TEXT
+        retiredAt TEXT,
+        embedding TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_knowledge_entries_agentId
         ON knowledge_entries (agentId);
     `);
-    // Add retiredAt column to existing databases that pre-date this schema version.
-    try {
-      this.db.exec(`ALTER TABLE knowledge_entries ADD COLUMN retiredAt TEXT`);
-    } catch {
-      // Column already exists — safe to ignore.
+    // Add columns to existing databases that pre-date this schema version.
+    for (const col of ["retiredAt TEXT", "embedding TEXT"]) {
+      try {
+        this.db.exec(`ALTER TABLE knowledge_entries ADD COLUMN ${col}`);
+      } catch {
+        // Column already exists — safe to ignore.
+      }
     }
     if (dbPath !== ":memory:") {
       // Ensure permissions are set after table creation (SQLite may rewrite the file).
@@ -88,11 +94,13 @@ export class KnowledgeDbStore {
    * `entry.confidence` is stored in the `score` column.
    * `entry.tags` is serialised as JSON in `metadata`.
    * `entry.expiresAt` is stored in the `expiresAt` column.
+   *
+   * @param embedding  Optional embedding vector to store alongside the entry.
    */
-  insert(agentId: string, entry: KnowledgeEntry): void {
+  insert(agentId: string, entry: KnowledgeEntry, embedding?: number[]): void {
     const stmt = this.db.prepare(`
-      INSERT INTO knowledge_entries (agentId, content, source, score, createdAt, expiresAt, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO knowledge_entries (agentId, content, source, score, createdAt, expiresAt, metadata, embedding)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       agentId,
@@ -102,7 +110,48 @@ export class KnowledgeDbStore {
       entry.createdAt,
       entry.expiresAt ?? null,
       entry.tags ? JSON.stringify(entry.tags) : null,
+      embedding ? JSON.stringify(embedding) : null,
     );
+  }
+
+  /**
+   * Insert a KnowledgeEntry together with its embedding vector.
+   * Convenience wrapper around `insert()` that makes the embedding mandatory.
+   */
+  insertWithEmbedding(agentId: string, entry: KnowledgeEntry, embedding: number[]): void {
+    this.insert(agentId, entry, embedding);
+  }
+
+  /**
+   * Return up to `topK` entries for `agentId` ranked by cosine similarity to
+   * `queryEmbedding`.  Only entries that have a stored embedding are considered.
+   * Excludes soft-deleted (retired) entries and entries whose `expiresAt` is in
+   * the past.
+   *
+   * Cosine similarity is computed in application code because `better-sqlite3`
+   * does not natively support vector operations.  For datasets with millions of
+   * entries consider `sqlite-vss` or an external vector DB instead.
+   */
+  searchSemantic(agentId: string, queryEmbedding: number[], topK: number): KnowledgeEntry[] {
+    const now = new Date().toISOString();
+    const rows = this.db.prepare(`
+      SELECT * FROM knowledge_entries
+      WHERE agentId = ?
+        AND embedding IS NOT NULL
+        AND (retiredAt IS NULL)
+        AND (expiresAt IS NULL OR expiresAt > ?)
+    `).all(agentId, now) as KnowledgeRow[];
+
+    if (rows.length === 0) return [];
+
+    const scored = rows.map((row) => {
+      const emb = JSON.parse(row.embedding!) as number[];
+      const sim = cosineSimilarity(queryEmbedding, emb);
+      return { entry: this.rowToEntry(row), sim };
+    });
+
+    scored.sort((a, b) => b.sim - a.sim);
+    return scored.slice(0, topK).map((item) => item.entry);
   }
 
   /**
@@ -123,6 +172,36 @@ export class KnowledgeDbStore {
     `);
     const rows = stmt.all(agentId, `%${keyword}%`, now, topK) as KnowledgeRow[];
     return rows.map((row) => this.rowToEntry(row));
+  }
+
+  /**
+   * Like `searchSemantic()` but also returns the raw cosine-similarity score
+   * for each result.  Used internally by `MemoryAdapter.lookupHybrid()`.
+   */
+  searchSemanticWithScores(
+    agentId: string,
+    queryEmbedding: number[],
+    topK: number,
+  ): Array<{ entry: KnowledgeEntry; score: number }> {
+    const now = new Date().toISOString();
+    const rows = this.db.prepare(`
+      SELECT * FROM knowledge_entries
+      WHERE agentId = ?
+        AND embedding IS NOT NULL
+        AND (retiredAt IS NULL)
+        AND (expiresAt IS NULL OR expiresAt > ?)
+    `).all(agentId, now) as KnowledgeRow[];
+
+    if (rows.length === 0) return [];
+
+    const scored = rows.map((row) => {
+      const emb = JSON.parse(row.embedding!) as number[];
+      const score = cosineSimilarity(queryEmbedding, emb);
+      return { entry: this.rowToEntry(row), score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, topK);
   }
 
   /**
