@@ -362,6 +362,9 @@ pub struct AgentSpec {
     pub id: String,
     /// Human-readable display name (e.g. `"Research Bot"`).
     pub name: String,
+    /// Schema version of this AgentSpec (e.g. `"1.0"`). Defaults to `"1.0"` when omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_version: Option<String>,
     /// Semantic version string (e.g. `"1.2.3"`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,

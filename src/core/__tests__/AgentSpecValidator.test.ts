@@ -1,4 +1,5 @@
 import { validateAgentSpec, VALID_CONTROL_LOOP_TYPES } from "../AgentSpecValidator";
+import { SUPPORTED_SPEC_VERSIONS, CURRENT_SPEC_VERSION } from "../types";
 
 // ── Helper ─────────────────────────────────────────────────────────────────────
 
@@ -571,5 +572,53 @@ describe("McpServiceListManager.registerAgent integration", () => {
         communication: { delegationTargets: ["agent-a"] },
       })
     ).not.toThrow();
+  });
+});
+
+// ── specVersion ────────────────────────────────────────────────────────────────
+
+describe("specVersion", () => {
+  it("is optional — spec without specVersion is valid", () => {
+    const r = validateAgentSpec(minimalSpec());
+    expect(r.valid).toBe(true);
+  });
+
+  it(`accepts the current default version "${CURRENT_SPEC_VERSION}"`, () => {
+    const r = validateAgentSpec({ ...minimalSpec(), specVersion: CURRENT_SPEC_VERSION });
+    expect(r.valid).toBe(true);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it.each(SUPPORTED_SPEC_VERSIONS)(
+    'accepts all supported versions: "%s"',
+    (version) => {
+      const r = validateAgentSpec({ ...minimalSpec(), specVersion: version });
+      expect(r.valid).toBe(true);
+    }
+  );
+
+  it("rejects an unsupported specVersion string", () => {
+    const r = validateAgentSpec({ ...minimalSpec(), specVersion: "99.0" });
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes("99.0"))).toBe(true);
+    expect(r.errors.some((e) => e.includes("specVersion"))).toBe(true);
+  });
+
+  it("rejects an empty specVersion string", () => {
+    const r = validateAgentSpec({ ...minimalSpec(), specVersion: "" });
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes("specVersion"))).toBe(true);
+  });
+
+  it("rejects a non-string specVersion", () => {
+    const r = validateAgentSpec({ ...minimalSpec(), specVersion: 1 });
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes("specVersion"))).toBe(true);
+  });
+
+  it("still validates 9-pillar fields when a valid specVersion is provided", () => {
+    const r = validateAgentSpec({ specVersion: "1.0", name: "Bot" }); // missing id
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes("id"))).toBe(true);
   });
 });

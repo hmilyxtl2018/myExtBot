@@ -832,6 +832,12 @@ export interface AgentSpecDomain {
   score: number;
 }
 
+/** Supported schema versions for AgentSpec. */
+export const SUPPORTED_SPEC_VERSIONS = ["1.0"] as const;
+export type SpecVersion = (typeof SUPPORTED_SPEC_VERSIONS)[number];
+/** The current (default) AgentSpec schema version. */
+export const CURRENT_SPEC_VERSION: SpecVersion = "1.0";
+
 /**
  * The complete 9-Pillar Agent Specification.
  * Extends AgentProfile; Pillars 1-6 are inherited, Pillars 7-9 are declared here.
@@ -843,6 +849,9 @@ export interface AgentSpecDomain {
  */
 export interface AgentSpec extends AgentProfile {
   // Pillars 1-6 are inherited from AgentProfile
+
+  /** Schema version of this AgentSpec (e.g. "1.0"). Defaults to "1.0" when omitted. */
+  specVersion?: string;
 
   // Pillar 1 addition — semantic version string (e.g. "1.2.3")
   version?: string;
