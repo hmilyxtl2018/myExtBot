@@ -19,6 +19,35 @@ export function createSceneTriggerRoutes(
   const router = Router();
 
   /**
+   * @openapi
+   * /api/scenes/auto-detect:
+   *   post:
+   *     tags: [Scene Triggers]
+   *     summary: Evaluate all scene triggers against the given context
+   *     description: Returns a ranked list of matching Scenes (highest score first).
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             description: TriggerContext — arbitrary key/value pairs describing the current context
+   *     responses:
+   *       200:
+   *         description: Array of SceneTriggerResult ordered by score descending
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   sceneId:
+   *                     type: string
+   *                   score:
+   *                     type: number
+   */
+  /**
    * POST /api/scenes/auto-detect
    *
    * Evaluates all Scene triggers against the provided context and returns a
@@ -33,6 +62,34 @@ export function createSceneTriggerRoutes(
     }
   );
 
+  /**
+   * @openapi
+   * /api/scenes/best-match:
+   *   post:
+   *     tags: [Scene Triggers]
+   *     summary: Get the single best-matching scene for the given context
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             description: TriggerContext — arbitrary key/value pairs describing the current context
+   *     responses:
+   *       200:
+   *         description: The best matching scene or null
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 sceneId:
+   *                   type: string
+   *                   nullable: true
+   *                 result:
+   *                   type: object
+   *                   nullable: true
+   */
   /**
    * POST /api/scenes/best-match
    *

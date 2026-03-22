@@ -11,6 +11,147 @@ import { CostQueryFilter } from "../core/CostLedger";
  * GET /api/costs/agents   — 按 Agent 汇总今日成本，降序
  * GET /api/costs/tools    — 按 Tool 汇总今日成本，降序
  */
+
+/**
+ * @openapi
+ * /api/costs:
+ *   get:
+ *     tags: [Costs]
+ *     summary: Query cost ledger entries
+ *     parameters:
+ *       - in: query
+ *         name: agentId
+ *         schema:
+ *           type: string
+ *         description: Filter by agent ID
+ *       - in: query
+ *         name: toolName
+ *         schema:
+ *           type: string
+ *         description: Filter by tool name
+ *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by date (YYYY-MM-DD)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       200:
+ *         description: Cost entries and total count
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 entries:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 total:
+ *                   type: integer
+ *
+ * /api/costs/summary:
+ *   get:
+ *     tags: [Costs]
+ *     summary: Get cost summary report
+ *     parameters:
+ *       - in: query
+ *         name: agentId
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: toolName
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *     responses:
+ *       200:
+ *         description: Aggregated cost summary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *
+ * /api/costs/agents:
+ *   get:
+ *     tags: [Costs]
+ *     summary: Get per-agent cost breakdown (sorted by cost descending)
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Date to query (defaults to today)
+ *     responses:
+ *       200:
+ *         description: Array of agent cost summaries sorted by cost descending
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   agentId:
+ *                     type: string
+ *                   cost:
+ *                     type: number
+ *                   calls:
+ *                     type: integer
+ *
+ * /api/costs/tools:
+ *   get:
+ *     tags: [Costs]
+ *     summary: Get per-tool cost breakdown (sorted by cost descending)
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Date to query (defaults to today)
+ *     responses:
+ *       200:
+ *         description: Array of tool cost summaries sorted by cost descending
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   toolName:
+ *                     type: string
+ *                   cost:
+ *                     type: number
+ *                   calls:
+ *                     type: integer
+ */
 export function handleCostRoutes(
   req: http.IncomingMessage,
   res: http.ServerResponse,
