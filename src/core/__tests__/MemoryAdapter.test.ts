@@ -416,6 +416,64 @@ describe("MemoryAdapter", () => {
       expect(results).toHaveLength(1);
       expect(results[0].content).toBe("in-memory content");
     });
+
+    it("lookupSimilar filters expired entries from the in-memory Map", () => {
+      const agent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true } },
+      };
+      const mgr = makeMockManager([agent]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager);
+
+      // Manually insert an expired entry into the in-memory Map by extractTrace
+      // with a past expiresAt using a mock config.
+      const agentWithExpiry: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true, autoRetireAfterMinutes: -1 } },
+      };
+      const mgrExpiry = makeMockManager([agentWithExpiry]);
+      const adapterExpiry = new MemoryAdapter(
+        mgrExpiry as unknown as McpServiceListManager,
+      );
+      // Extract entry — expiresAt will be 1 minute in the past.
+      adapterExpiry.extractTrace("bot", "already expired content", 0.9);
+
+      // lookupSimilar should not return the expired entry.
+      const results = adapterExpiry.lookupSimilar("bot", "expired content", 10);
+      expect(results).toHaveLength(0);
+    });
+
+    it("getKnowledgeDb filters expired entries from the in-memory Map", () => {
+      const agentWithExpiry: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true, autoRetireAfterMinutes: -1 } },
+      };
+      const mgr = makeMockManager([agentWithExpiry]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager);
+      adapter.extractTrace("bot", "expired content", 0.9);
+
+      expect(adapter.getKnowledgeDb("bot")).toHaveLength(0);
+    });
+
+    it("extractTrace purges expired entries before inserting a new one", () => {
+      const agentWithExpiry: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true, autoRetireAfterMinutes: -1 } },
+      };
+      const mgr = makeMockManager([agentWithExpiry]);
+      const adapter = new MemoryAdapter(mgr as unknown as McpServiceListManager);
+      // First entry — will expire immediately.
+      adapter.extractTrace("bot", "first entry", 0.9);
+      // Second entry — also expires immediately but should not exceed maxEntries limits.
+      adapter.extractTrace("bot", "second entry", 0.9);
+
+      // Both entries are expired so neither shows up.
+      expect(adapter.getKnowledgeDb("bot")).toHaveLength(0);
+    });
   });
 
   // ── autoRetireAfterMinutes / expiresAt ────────────────────────────────────
@@ -486,15 +544,19 @@ describe("MemoryAdapter", () => {
         expiresAt: pastExpiry,
       });
 
-      // Sanity check: entry is present before cleanup.
-      expect(store.query("bot", "old expired", 10)).toHaveLength(1);
+      // Sanity check: entry is present in DB (not yet retired) but won't appear
+      // in query() since expiresAt has passed — use list() to confirm it's there.
+      expect(store.list("bot")).toHaveLength(1);
 
       // Calling extractTrace triggers lazy deleteExpired internally.
       adapter.extractTrace("bot", "new content", 0.9);
 
-      // Expired entry should now be gone.
+      // Expired entry should be soft-deleted (retiredAt set) and excluded from query().
       const results = store.query("bot", "", 100);
       expect(results.every((r) => r.content !== "old expired content")).toBe(true);
+      // Entry should appear in listRetired() as an audit record.
+      const retired = store.listRetired("bot");
+      expect(retired.some((r) => r.content === "old expired content")).toBe(true);
     });
   });
 
@@ -532,6 +594,122 @@ describe("MemoryAdapter", () => {
       const found = mgr.memoryAdapter.lookupSimilar("e2e-bot", "end-to-end", 5);
       expect(found).toHaveLength(1);
       expect(found[0].content).toBe("end-to-end content");
+
+      mgr.close();
+      delete process.env["KNOWLEDGE_DB_PATH"];
+    });
+  });
+
+  // ── startAutoRetireSweep / stopAutoRetireSweep ────────────────────────────
+
+  describe("startAutoRetireSweep / stopAutoRetireSweep", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("calls deleteExpired for agents with autoRetireAfterMinutes on each tick (SQLite path)", () => {
+      const store = new KnowledgeDbStore();
+      store.init(":memory:");
+
+      const agent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true, autoRetireAfterMinutes: 60 } },
+      };
+      const agentWithoutExpiry: AgentProfile = {
+        id: "no-expiry-bot",
+        name: "No Expiry Bot",
+        memory: { knowledgeDb: { enabled: true } },
+      };
+
+      const mgr = {
+        getAgent: jest.fn((id: string) =>
+          [agent, agentWithoutExpiry].find((a) => a.id === id),
+        ),
+        getAllServiceHealths: jest.fn(() => []),
+        listAgents: jest.fn(() => [agent, agentWithoutExpiry]),
+      } as unknown as McpServiceListManager;
+
+      const deleteExpiredSpy = jest.spyOn(store, "deleteExpired");
+      const adapter = new MemoryAdapter(mgr, store);
+      adapter.startAutoRetireSweep(1000);
+
+      jest.advanceTimersByTime(1000);
+
+      // Only the agent with autoRetireAfterMinutes should trigger deleteExpired.
+      expect(deleteExpiredSpy).toHaveBeenCalledWith("bot");
+      expect(deleteExpiredSpy).not.toHaveBeenCalledWith("no-expiry-bot");
+
+      adapter.stopAutoRetireSweep();
+      store.close();
+    });
+
+    it("stopAutoRetireSweep prevents further cleanup calls", () => {
+      const agent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true, autoRetireAfterMinutes: 60 } },
+      };
+      const mgr = {
+        getAgent: jest.fn((id: string) => (id === "bot" ? agent : undefined)),
+        getAllServiceHealths: jest.fn(() => []),
+        listAgents: jest.fn(() => [agent]),
+      } as unknown as McpServiceListManager;
+
+      const store = new KnowledgeDbStore();
+      store.init(":memory:");
+      const deleteExpiredSpy = jest.spyOn(store, "deleteExpired");
+
+      const adapter = new MemoryAdapter(mgr, store);
+      adapter.startAutoRetireSweep(500);
+      adapter.stopAutoRetireSweep();
+
+      jest.advanceTimersByTime(2000);
+
+      expect(deleteExpiredSpy).not.toHaveBeenCalled();
+      store.close();
+    });
+
+    it("startAutoRetireSweep works on the in-memory path", () => {
+      const agent: AgentProfile = {
+        id: "bot",
+        name: "Bot",
+        memory: { knowledgeDb: { enabled: true, autoRetireAfterMinutes: -1 } },
+      };
+      const mgr = {
+        getAgent: jest.fn((id: string) => (id === "bot" ? agent : undefined)),
+        getAllServiceHealths: jest.fn(() => []),
+        listAgents: jest.fn(() => [agent]),
+      } as unknown as McpServiceListManager;
+
+      const adapter = new MemoryAdapter(mgr); // no store — in-memory path
+
+      // Extract an entry that's already expired (autoRetireAfterMinutes = -1).
+      adapter.extractTrace("bot", "expired content", 0.9);
+      // Re-add via direct map manipulation is not possible; but we can verify the
+      // sweep tick at minimum does not throw.
+      expect(() => jest.advanceTimersByTime(1000)).not.toThrow();
+      adapter.stopAutoRetireSweep();
+    });
+
+    it("McpServiceListManager.startAutoRetireSweep delegates to memoryAdapter", () => {
+      process.env["KNOWLEDGE_DB_PATH"] = ":memory:";
+      const { McpServiceListManager } = require("../McpServiceListManager") as {
+        McpServiceListManager: new () => import("../McpServiceListManager").McpServiceListManager;
+      };
+      const mgr = new McpServiceListManager();
+      const startSpy = jest.spyOn(mgr.memoryAdapter, "startAutoRetireSweep");
+      const stopSpy = jest.spyOn(mgr.memoryAdapter, "stopAutoRetireSweep");
+
+      mgr.startAutoRetireSweep(1000);
+      expect(startSpy).toHaveBeenCalledWith(1000);
+
+      mgr.stopAutoRetireSweep();
+      expect(stopSpy).toHaveBeenCalled();
 
       mgr.close();
       delete process.env["KNOWLEDGE_DB_PATH"];

@@ -28,6 +28,8 @@ export interface KnowledgeEntry {
   createdAt: string;
   /** ISO timestamp after which this entry may be purged by autoRetire. */
   expiresAt?: string;
+  /** ISO timestamp when this entry was soft-deleted (retired). Undefined for active entries. */
+  retiredAt?: string;
   tags?: string[];
 }
 
@@ -35,10 +37,29 @@ export class MemoryAdapter {
   /** In-memory K-DB stub — replace with real storage backend. */
   private knowledgeDb = new Map<string, KnowledgeEntry[]>();
 
+  /** Handle returned by setInterval for the background auto-retire sweep. */
+  private sweepIntervalHandle: ReturnType<typeof setInterval> | undefined;
+
   constructor(
     private readonly manager: McpServiceListManager,
     private readonly store?: KnowledgeDbStore,
   ) {}
+
+  // ── private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Remove expired entries from the in-memory Map for `agentId`.
+   * Only entries where `expiresAt` is defined and in the past are removed.
+   */
+  private purgeExpiredInMemory(agentId: string): void {
+    const entries = this.knowledgeDb.get(agentId);
+    if (!entries) return;
+    const now = Date.now();
+    const active = entries.filter(
+      (e) => e.expiresAt === undefined || new Date(e.expiresAt).getTime() > now,
+    );
+    this.knowledgeDb.set(agentId, active);
+  }
 
   /**
    * Get agent-level health summary by aggregating service-level health.
@@ -137,8 +158,6 @@ export class MemoryAdapter {
       tags,
     };
 
-    const existing = this.knowledgeDb.get(agentId) ?? [];
-
     // Auto-promote: undefined threshold means always promote; otherwise check confidence.
     const shouldPromote =
       config.autoPromoteThreshold === undefined ||
@@ -151,11 +170,14 @@ export class MemoryAdapter {
         const maxEntries = config.maxEntries ?? 1000;
         this.store.prune(agentId, maxEntries);
       } else {
-        existing.push(entry);
+        // In-memory path: purge expired entries before inserting.
+        this.purgeExpiredInMemory(agentId);
+        const current = this.knowledgeDb.get(agentId) ?? [];
+        current.push(entry);
         // Prune if over max
         const maxEntries = config.maxEntries ?? 1000;
-        while (existing.length > maxEntries) existing.shift();
-        this.knowledgeDb.set(agentId, existing);
+        while (current.length > maxEntries) current.shift();
+        this.knowledgeDb.set(agentId, current);
       }
       return entry;
     }
@@ -166,11 +188,13 @@ export class MemoryAdapter {
   /**
    * Look up similar knowledge entries for RAG retrieval.
    * Uses simple keyword matching; replace with embedding-based similarity in production.
+   * Expired entries are filtered out on both the SQLite and in-memory paths.
    */
   lookupSimilar(agentId: string, query: string, topK = 5): KnowledgeEntry[] {
     if (this.store) {
       return this.store.query(agentId, query, topK);
     }
+    this.purgeExpiredInMemory(agentId);
     const entries = this.knowledgeDb.get(agentId) ?? [];
     const q = query.toLowerCase();
     return entries.filter((e) => e.content.toLowerCase().includes(q)).slice(0, topK);
@@ -180,6 +204,47 @@ export class MemoryAdapter {
     if (this.store) {
       return this.store.query(agentId, "", 10000);
     }
+    this.purgeExpiredInMemory(agentId);
     return [...(this.knowledgeDb.get(agentId) ?? [])];
+  }
+
+  // ── Background auto-retire sweep ──────────────────────────────────────────
+
+  /**
+   * Start a periodic background sweep that soft-deletes expired entries for
+   * every registered agent that has `autoRetireAfterMinutes` configured.
+   *
+   * @param intervalMs  Sweep interval in milliseconds.  Defaults to 5 minutes.
+   * @returns           `this` for chaining.
+   */
+  startAutoRetireSweep(intervalMs = 5 * 60_000): this {
+    this.stopAutoRetireSweep();
+    this.sweepIntervalHandle = setInterval(() => {
+      const agents = this.manager.listAgents?.() ?? [];
+      for (const agent of agents) {
+        if (agent.memory?.knowledgeDb?.autoRetireAfterMinutes !== undefined) {
+          if (this.store) {
+            this.store.deleteExpired(agent.id);
+          } else {
+            this.purgeExpiredInMemory(agent.id);
+          }
+        }
+      }
+    }, intervalMs);
+    // Allow the Node.js process to exit even if the interval is still running.
+    if (typeof this.sweepIntervalHandle === "object" && this.sweepIntervalHandle !== null) {
+      (this.sweepIntervalHandle as NodeJS.Timeout).unref?.();
+    }
+    return this;
+  }
+
+  /**
+   * Stop the background auto-retire sweep started by `startAutoRetireSweep()`.
+   */
+  stopAutoRetireSweep(): void {
+    if (this.sweepIntervalHandle !== undefined) {
+      clearInterval(this.sweepIntervalHandle);
+      this.sweepIntervalHandle = undefined;
+    }
   }
 }

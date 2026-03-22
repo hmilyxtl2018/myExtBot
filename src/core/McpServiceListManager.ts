@@ -112,7 +112,28 @@ export class McpServiceListManager {
    * Call this when you control the lifecycle and do not rely on process exit.
    */
   close(): void {
+    this.memoryAdapter.stopAutoRetireSweep();
     this.knowledgeStore.close();
+  }
+
+  /**
+   * Start a periodic background sweep that soft-deletes expired knowledge
+   * entries for every registered agent with `autoRetireAfterMinutes` set.
+   * Delegates to `memoryAdapter.startAutoRetireSweep()`.
+   *
+   * @param intervalMs  Sweep interval in milliseconds (default: 5 minutes).
+   */
+  startAutoRetireSweep(intervalMs?: number): this {
+    this.memoryAdapter.startAutoRetireSweep(intervalMs);
+    return this;
+  }
+
+  /**
+   * Stop the background auto-retire sweep.
+   * Delegates to `memoryAdapter.stopAutoRetireSweep()`.
+   */
+  stopAutoRetireSweep(): void {
+    this.memoryAdapter.stopAutoRetireSweep();
   }
 
   // ── Service management ────────────────────────────────────────────────────

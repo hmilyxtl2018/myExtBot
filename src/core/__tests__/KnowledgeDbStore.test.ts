@@ -224,7 +224,7 @@ describe("KnowledgeDbStore", () => {
   // ── deleteExpired ─────────────────────────────────────────────────────────
 
   describe("deleteExpired", () => {
-    it("deletes entries whose expiresAt is in the past", () => {
+    it("soft-deletes entries whose expiresAt is in the past (sets retiredAt)", () => {
       const past = new Date(Date.now() - 60_000).toISOString();
       const future = new Date(Date.now() + 60_000).toISOString();
 
@@ -249,18 +249,26 @@ describe("KnowledgeDbStore", () => {
 
       store.deleteExpired("agent1");
 
+      // Expired entry excluded from query results.
       const results = store.query("agent1", "", 10);
       expect(results).toHaveLength(1);
       expect(results[0].content).toBe("active entry");
+
+      // Expired entry visible via listRetired().
+      const retired = store.listRetired("agent1");
+      expect(retired).toHaveLength(1);
+      expect(retired[0].content).toBe("expired entry");
+      expect(retired[0].retiredAt).toBeDefined();
     });
 
-    it("does not delete entries without expiresAt", () => {
+    it("does not soft-delete entries without expiresAt", () => {
       store.insert("agent1", makeEntry("agent1", "permanent entry", 0.9));
       store.deleteExpired("agent1");
       expect(store.query("agent1", "", 10)).toHaveLength(1);
+      expect(store.listRetired("agent1")).toHaveLength(0);
     });
 
-    it("deletes expired entries across all agents when no agentId given", () => {
+    it("soft-deletes expired entries across all agents when no agentId given", () => {
       const past = new Date(Date.now() - 60_000).toISOString();
 
       const e1: import("../MemoryAdapter").KnowledgeEntry = {
@@ -278,13 +286,15 @@ describe("KnowledgeDbStore", () => {
 
       expect(store.query("a1", "", 10)).toHaveLength(0);
       expect(store.query("a2", "", 10)).toHaveLength(0);
+      expect(store.listRetired("a1")).toHaveLength(1);
+      expect(store.listRetired("a2")).toHaveLength(1);
     });
   });
 
   // ── list ──────────────────────────────────────────────────────────────────
 
   describe("list", () => {
-    it("returns all entries for a specific agent", () => {
+    it("returns all active entries for a specific agent", () => {
       store.insert("agent1", makeEntry("agent1", "entry A", 0.9));
       store.insert("agent1", makeEntry("agent1", "entry B", 0.8));
       store.insert("agent2", makeEntry("agent2", "entry C", 0.7));
@@ -294,7 +304,7 @@ describe("KnowledgeDbStore", () => {
       expect(results.every((r) => r.agentId === "agent1")).toBe(true);
     });
 
-    it("returns entries for all agents when no agentId given", () => {
+    it("returns active entries for all agents when no agentId given", () => {
       store.insert("agent1", makeEntry("agent1", "entry A", 0.9));
       store.insert("agent2", makeEntry("agent2", "entry B", 0.8));
 
@@ -305,6 +315,141 @@ describe("KnowledgeDbStore", () => {
     it("returns empty array when no entries exist", () => {
       expect(store.list("agent1")).toEqual([]);
       expect(store.list()).toEqual([]);
+    });
+
+    it("excludes retired entries by default", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const expiredEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-1",
+        agentId: "agent1",
+        content: "expired entry",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: past,
+      };
+      store.insert("agent1", expiredEntry);
+      store.insert("agent1", makeEntry("agent1", "active entry", 0.9));
+      store.deleteExpired("agent1");
+
+      expect(store.list("agent1")).toHaveLength(1);
+      expect(store.list("agent1")[0].content).toBe("active entry");
+    });
+
+    it("includes retired entries when includeRetired is true", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const expiredEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-1",
+        agentId: "agent1",
+        content: "expired entry",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: past,
+      };
+      store.insert("agent1", expiredEntry);
+      store.insert("agent1", makeEntry("agent1", "active entry", 0.9));
+      store.deleteExpired("agent1");
+
+      expect(store.list("agent1", { includeRetired: true })).toHaveLength(2);
+    });
+  });
+
+  // ── listRetired ───────────────────────────────────────────────────────────
+
+  describe("listRetired", () => {
+    it("returns only retired entries for a specific agent", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const expiredEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-exp",
+        agentId: "agent1",
+        content: "expired content",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: past,
+      };
+      store.insert("agent1", expiredEntry);
+      store.insert("agent1", makeEntry("agent1", "active content", 0.9));
+      store.deleteExpired("agent1");
+
+      const retired = store.listRetired("agent1");
+      expect(retired).toHaveLength(1);
+      expect(retired[0].content).toBe("expired content");
+      expect(retired[0].retiredAt).toBeDefined();
+    });
+
+    it("returns empty array when no retired entries exist", () => {
+      store.insert("agent1", makeEntry("agent1", "permanent", 0.9));
+      expect(store.listRetired("agent1")).toHaveLength(0);
+    });
+
+    it("returns retired entries across all agents when no agentId given", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const e1: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-a1-1", agentId: "a1", content: "a1 retired",
+        confidence: 0.9, createdAt: new Date().toISOString(), expiresAt: past,
+      };
+      const e2: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-a2-1", agentId: "a2", content: "a2 retired",
+        confidence: 0.9, createdAt: new Date().toISOString(), expiresAt: past,
+      };
+      store.insert("a1", e1);
+      store.insert("a2", e2);
+      store.deleteExpired();
+
+      const retired = store.listRetired();
+      expect(retired).toHaveLength(2);
+    });
+  });
+
+  // ── purgeRetired ──────────────────────────────────────────────────────────
+
+  describe("purgeRetired", () => {
+    it("permanently removes all retired entries when no cutoff is given", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const expiredEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-1",
+        agentId: "agent1",
+        content: "will be purged",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: past,
+      };
+      store.insert("agent1", expiredEntry);
+      store.deleteExpired("agent1");
+
+      expect(store.listRetired("agent1")).toHaveLength(1);
+
+      const count = store.purgeRetired();
+      expect(count).toBe(1);
+      expect(store.listRetired("agent1")).toHaveLength(0);
+    });
+
+    it("only removes retired entries older than olderThanDays", () => {
+      const past = new Date(Date.now() - 3 * 86_400_000).toISOString(); // 3 days ago
+      const expiredEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-1",
+        agentId: "agent1",
+        content: "old retired entry",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: past,
+      };
+      store.insert("agent1", expiredEntry);
+      store.deleteExpired("agent1");
+
+      // Purge entries retired more than 7 days ago — our entry is ~0 days old, so it should survive.
+      const count = store.purgeRetired(7);
+      expect(count).toBe(0);
+      expect(store.listRetired("agent1")).toHaveLength(1);
+
+      // Purge entries retired more than 0 days ago — our entry should be removed.
+      const count2 = store.purgeRetired(0);
+      expect(count2).toBe(1);
+      expect(store.listRetired("agent1")).toHaveLength(0);
+    });
+
+    it("returns 0 when there are no retired entries", () => {
+      store.insert("agent1", makeEntry("agent1", "permanent", 0.9));
+      expect(store.purgeRetired()).toBe(0);
     });
   });
 });
