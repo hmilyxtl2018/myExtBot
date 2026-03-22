@@ -104,6 +104,12 @@ pub struct AgentSpecPrompts {
     /// System prompt injected to the LLM for this agent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
+    /// Text prepended before the system prompt when composing the final prompt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preamble: Option<String>,
+    /// Text appended after the system prompt when composing the final prompt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<String>,
 }
 
 // ── Pillar 6: Intent & Persona ────────────────────────────────────────────────
@@ -847,6 +853,8 @@ mod tests {
             system_prompt: Some("You are a research assistant.".to_string()),
             prompts: Some(AgentSpecPrompts {
                 system: Some("Be concise.".to_string()),
+                preamble: Some("Context: research task.".to_string()),
+                suffix: Some("Always cite sources.".to_string()),
             }),
             intents: Some(vec!["research".to_string(), "summarise".to_string()]),
             languages: Some(vec!["en".to_string(), "zh".to_string()]),

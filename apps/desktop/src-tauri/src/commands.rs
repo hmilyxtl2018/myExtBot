@@ -11,6 +11,38 @@ use crate::events::{AgentEvent, AgentStatus, ChatMessage, ToolCallResult};
 use crate::permissions::PermissionManager;
 use crate::ts_bridge::TsBridge;
 
+/// Compose the final system prompt from an [`AgentSpec`].
+///
+/// Joins non-empty parts in order: `preamble`, `system_prompt` (from
+/// `AgentProfile`), `prompts.system`, and `suffix`.  Returns `None` if all
+/// parts are absent or empty.
+pub fn compose_system_prompt(spec: &AgentSpec) -> Option<String> {
+    let mut parts: Vec<&str> = Vec::new();
+
+    if let Some(prompts) = &spec.prompts {
+        if let Some(p) = prompts.preamble.as_deref().filter(|s| !s.is_empty()) {
+            parts.push(p);
+        }
+    }
+    if let Some(sp) = spec.system_prompt.as_deref().filter(|s| !s.is_empty()) {
+        parts.push(sp);
+    }
+    if let Some(prompts) = &spec.prompts {
+        if let Some(s) = prompts.system.as_deref().filter(|s| !s.is_empty()) {
+            parts.push(s);
+        }
+        if let Some(s) = prompts.suffix.as_deref().filter(|s| !s.is_empty()) {
+            parts.push(s);
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n"))
+    }
+}
+
 /// Send a user chat message and kick off the agent.
 ///
 /// Immediately echoes the user message as a `ChatMessage` event and transitions
@@ -55,7 +87,7 @@ pub async fn send_message(
         let db    = app_handle.state::<AuditDb>();
 
         // ── 1. Plan ───────────────────────────────────────────────────────────
-        let steps = match crate::planner::plan(&content).await {
+        let steps = match crate::planner::plan(&content, None).await {
             Ok(s) => s,
             Err(e) => {
                 tracing::error!("Planner error: {e}");
@@ -85,7 +117,7 @@ pub async fn send_message(
             // a borrow on updated_steps across the await point.
             let step_snapshot = updated_steps[i].clone();
 
-            match crate::executor::execute_step(&step_snapshot, &agent, &db).await {
+            match crate::executor::execute_step(&step_snapshot, &agent, &db, None).await {
                 Ok(result) => {
                     updated_steps[i].result = Some(result.output.clone());
 
@@ -611,7 +643,7 @@ pub async fn plan_with_routing(
     content: String,
     bridge: State<'_, TsBridge>,
 ) -> Result<Vec<crate::events::PlanStep>, String> {
-    let mut steps = crate::planner::plan(&content)
+    let mut steps = crate::planner::plan(&content, None)
         .await
         .map_err(|e| e.to_string())?;
 

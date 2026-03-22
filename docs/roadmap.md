@@ -57,7 +57,7 @@ This document tracks what has been delivered, what is in progress, and what come
 
 > Tracking issue: [#31](https://github.com/hmilyxtl2018/myExtBot/issues/31)
 
-### 4.1 LLM Prompt Injection from AgentSpec
+### 4.1 LLM Prompt Injection from AgentSpec ✅ Done (#56)
 
 - Inject `AgentSpec.prompts.system` as the LLM system prompt so each agent carries its own persona and instructions.
 - Support `prompts.preamble` and `prompts.suffix` for composable prompt templates.

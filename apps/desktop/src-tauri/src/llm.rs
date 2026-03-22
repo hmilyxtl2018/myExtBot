@@ -32,11 +32,24 @@ pub struct LlmResponse {
 ///
 /// Reads `LLM_PROVIDER` from the environment (default: `"openai"`).
 pub async fn complete(user_message: &str) -> Result<LlmResponse> {
+    complete_inner(None, user_message).await
+}
+
+/// Dispatch to the configured LLM provider with an explicit system prompt.
+///
+/// Reads `LLM_PROVIDER` from the environment (default: `"openai"`).
+/// For OpenAI and Ollama, the system prompt is sent as a `system` role message.
+/// For Anthropic, it is sent in the top-level `"system"` field.
+pub async fn complete_with_system(system_prompt: &str, user_message: &str) -> Result<LlmResponse> {
+    complete_inner(Some(system_prompt), user_message).await
+}
+
+async fn complete_inner(system_prompt: Option<&str>, user_message: &str) -> Result<LlmResponse> {
     let provider = std::env::var("LLM_PROVIDER").unwrap_or_else(|_| "openai".into());
     match provider.to_lowercase().as_str() {
-        "openai"    => openai_complete(user_message).await,
-        "anthropic" => anthropic_complete(user_message).await,
-        "ollama"    => ollama_complete(user_message).await,
+        "openai"    => openai_complete(system_prompt, user_message).await,
+        "anthropic" => anthropic_complete(system_prompt, user_message).await,
+        "ollama"    => ollama_complete(system_prompt, user_message).await,
         other => Err(anyhow!(
             "Unknown LLM provider: {other:?}. \
              Set LLM_PROVIDER=openai|anthropic|ollama in your .env file."
@@ -46,7 +59,7 @@ pub async fn complete(user_message: &str) -> Result<LlmResponse> {
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
 
-async fn openai_complete(user_message: &str) -> Result<LlmResponse> {
+async fn openai_complete(system_prompt: Option<&str>, user_message: &str) -> Result<LlmResponse> {
     let api_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| anyhow!("OPENAI_API_KEY is not set. See .env.example."))?;
     if api_key.is_empty() {
@@ -59,9 +72,14 @@ async fn openai_complete(user_message: &str) -> Result<LlmResponse> {
 
     let start = Instant::now();
     let client = reqwest::Client::new();
+    let mut messages = serde_json::Value::Array(vec![]);
+    if let Some(sp) = system_prompt {
+        messages.as_array_mut().unwrap().push(json!({"role": "system", "content": sp}));
+    }
+    messages.as_array_mut().unwrap().push(json!({"role": "user", "content": user_message}));
     let body = json!({
         "model": model,
-        "messages": [{"role": "user", "content": user_message}],
+        "messages": messages,
     });
 
     let resp = client
@@ -93,7 +111,7 @@ async fn openai_complete(user_message: &str) -> Result<LlmResponse> {
 
 // ── Anthropic ─────────────────────────────────────────────────────────────────
 
-async fn anthropic_complete(user_message: &str) -> Result<LlmResponse> {
+async fn anthropic_complete(system_prompt: Option<&str>, user_message: &str) -> Result<LlmResponse> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .map_err(|_| anyhow!("ANTHROPIC_API_KEY is not set. See .env.example."))?;
     if api_key.is_empty() {
@@ -104,11 +122,14 @@ async fn anthropic_complete(user_message: &str) -> Result<LlmResponse> {
 
     let start = Instant::now();
     let client = reqwest::Client::new();
-    let body = json!({
+    let mut body = json!({
         "model": model,
         "max_tokens": 4096,
         "messages": [{"role": "user", "content": user_message}],
     });
+    if let Some(sp) = system_prompt {
+        body["system"] = serde_json::Value::String(sp.to_string());
+    }
 
     let resp = client
         .post("https://api.anthropic.com/v1/messages")
@@ -140,16 +161,21 @@ async fn anthropic_complete(user_message: &str) -> Result<LlmResponse> {
 
 // ── Ollama ────────────────────────────────────────────────────────────────────
 
-async fn ollama_complete(user_message: &str) -> Result<LlmResponse> {
+async fn ollama_complete(system_prompt: Option<&str>, user_message: &str) -> Result<LlmResponse> {
     let base_url = std::env::var("OLLAMA_BASE_URL")
         .unwrap_or_else(|_| "http://localhost:11434".into());
     let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.2".into());
 
     let start = Instant::now();
     let client = reqwest::Client::new();
+    let mut messages = serde_json::Value::Array(vec![]);
+    if let Some(sp) = system_prompt {
+        messages.as_array_mut().unwrap().push(json!({"role": "system", "content": sp}));
+    }
+    messages.as_array_mut().unwrap().push(json!({"role": "user", "content": user_message}));
     let body = json!({
         "model": model,
-        "messages": [{"role": "user", "content": user_message}],
+        "messages": messages,
         "stream": false,
     });
 
@@ -310,5 +336,64 @@ mod tests {
         std::env::remove_var("OLLAMA_BASE_URL");
         // The call must fail (no server), but it must not panic with an env-var error.
         assert!(result.is_err());
+    }
+
+    // ── complete_with_system ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_complete_with_system_unknown_provider_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "badprovider");
+        let result = run(complete_with_system("system", "hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("badprovider"), "error should name the bad provider");
+    }
+
+    #[test]
+    fn test_complete_with_system_openai_missing_key_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "openai");
+        std::env::remove_var("OPENAI_API_KEY");
+        let result = run(complete_with_system("You are helpful.", "hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.to_lowercase().contains("openai_api_key"),
+            "error should mention the missing env var, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_complete_with_system_anthropic_missing_key_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "anthropic");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        let result = run(complete_with_system("You are helpful.", "hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.to_lowercase().contains("anthropic_api_key"),
+            "error should mention the missing env var, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_complete_with_system_ollama_unreachable_returns_error() {
+        let _g = env_lock();
+        std::env::set_var("LLM_PROVIDER", "ollama");
+        std::env::set_var("OLLAMA_BASE_URL", "http://127.0.0.1:19999");
+        let result = run(complete_with_system("You are helpful.", "hello"));
+        std::env::remove_var("LLM_PROVIDER");
+        std::env::remove_var("OLLAMA_BASE_URL");
+        assert!(result.is_err(), "Ollama should fail when server is unreachable");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.to_lowercase().contains("ollama"),
+            "error should mention Ollama, got: {msg}"
+        );
     }
 }
