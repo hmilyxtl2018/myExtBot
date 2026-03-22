@@ -62,7 +62,7 @@ This document tracks what has been delivered, what is in progress, and what come
 - Inject `AgentSpec.prompts.system` as the LLM system prompt so each agent carries its own persona and instructions.
 - Support `prompts.preamble` and `prompts.suffix` for composable prompt templates.
 
-### 4.2 Auto-Retire Mechanism
+### 4.2 Auto-Retire Mechanism ✅ Done (#57)
 
 - Honour `memory.autoRetireAfterMinutes` in the MemoryAdapter.
 - Implement lazy cleanup on `extractTrace()` and/or a background `setInterval` sweep.

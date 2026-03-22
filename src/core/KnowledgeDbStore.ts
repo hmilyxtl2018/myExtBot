@@ -12,6 +12,7 @@ interface KnowledgeRow {
   createdAt: string;
   expiresAt: string | null;
   metadata: string | null;
+  retiredAt: string | null;
 }
 
 /**
@@ -60,11 +61,18 @@ export class KnowledgeDbStore {
         score     REAL    DEFAULT 0,
         createdAt TEXT    NOT NULL,
         expiresAt TEXT,
-        metadata  TEXT
+        metadata  TEXT,
+        retiredAt TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_knowledge_entries_agentId
         ON knowledge_entries (agentId);
     `);
+    // Add retiredAt column to existing databases that pre-date this schema version.
+    try {
+      this.db.exec(`ALTER TABLE knowledge_entries ADD COLUMN retiredAt TEXT`);
+    } catch {
+      // Column already exists — safe to ignore.
+    }
     if (dbPath !== ":memory:") {
       // Ensure permissions are set after table creation (SQLite may rewrite the file).
       try {
@@ -100,15 +108,20 @@ export class KnowledgeDbStore {
   /**
    * Return up to `topK` entries for `agentId` whose content contains
    * `keyword` (case-insensitive LIKE), ordered by score DESC then createdAt DESC.
+   * Excludes soft-deleted (retired) entries and entries whose `expiresAt` is in
+   * the past, so no explicit `deleteExpired()` call is required on the read path.
    */
   query(agentId: string, keyword: string, topK: number): KnowledgeEntry[] {
+    const now = new Date().toISOString();
     const stmt = this.db.prepare(`
       SELECT * FROM knowledge_entries
       WHERE agentId = ? AND content LIKE ?
+        AND (retiredAt IS NULL)
+        AND (expiresAt IS NULL OR expiresAt > ?)
       ORDER BY score DESC, createdAt DESC
       LIMIT ?
     `);
-    const rows = stmt.all(agentId, `%${keyword}%`, topK) as KnowledgeRow[];
+    const rows = stmt.all(agentId, `%${keyword}%`, now, topK) as KnowledgeRow[];
     return rows.map((row) => this.rowToEntry(row));
   }
 
@@ -130,43 +143,87 @@ export class KnowledgeDbStore {
   }
 
   /**
-   * Delete all entries for `agentId` (or all agents when omitted) whose
-   * `expiresAt` timestamp is in the past.  No-op for entries without an
-   * `expiresAt` value (they never expire).
+   * Soft-delete all entries for `agentId` (or all agents when omitted) whose
+   * `expiresAt` timestamp is in the past by setting `retiredAt` to the current
+   * UTC timestamp.  Entries without an `expiresAt` value never expire.
+   * Soft-deleted entries are preserved for audit via `listRetired()` but are
+   * excluded from `query()` and `list()` results.
    */
   deleteExpired(agentId?: string): void {
     const now = new Date().toISOString();
     if (agentId !== undefined) {
       this.db.prepare(`
-        DELETE FROM knowledge_entries
+        UPDATE knowledge_entries
+        SET retiredAt = ?
         WHERE agentId = ? AND expiresAt IS NOT NULL AND expiresAt <= ?
-      `).run(agentId, now);
+          AND retiredAt IS NULL
+      `).run(now, agentId, now);
     } else {
       this.db.prepare(`
-        DELETE FROM knowledge_entries
+        UPDATE knowledge_entries
+        SET retiredAt = ?
         WHERE expiresAt IS NOT NULL AND expiresAt <= ?
-      `).run(now);
+          AND retiredAt IS NULL
+      `).run(now, now);
     }
   }
 
   /**
    * Return all entries for `agentId` (or all agents when omitted), ordered
    * by score DESC then createdAt DESC.  Useful for inspection / admin tooling.
+   *
+   * By default, soft-deleted (retired) entries are excluded.  Pass
+   * `includeRetired: true` to include them.
    */
-  list(agentId?: string): KnowledgeEntry[] {
+  list(agentId?: string, options?: { includeRetired?: boolean }): KnowledgeEntry[] {
+    const includeRetired = options?.includeRetired ?? false;
+    if (agentId !== undefined) {
+      const sql = includeRetired
+        ? `SELECT * FROM knowledge_entries WHERE agentId = ? ORDER BY score DESC, createdAt DESC`
+        : `SELECT * FROM knowledge_entries WHERE agentId = ? AND retiredAt IS NULL ORDER BY score DESC, createdAt DESC`;
+      const rows = this.db.prepare(sql).all(agentId) as KnowledgeRow[];
+      return rows.map((row) => this.rowToEntry(row));
+    }
+    const sql = includeRetired
+      ? `SELECT * FROM knowledge_entries ORDER BY score DESC, createdAt DESC`
+      : `SELECT * FROM knowledge_entries WHERE retiredAt IS NULL ORDER BY score DESC, createdAt DESC`;
+    const rows = this.db.prepare(sql).all() as KnowledgeRow[];
+    return rows.map((row) => this.rowToEntry(row));
+  }
+
+  /**
+   * Return all soft-deleted (retired) entries for `agentId` (or all agents
+   * when omitted), ordered by retiredAt DESC.  Useful for audit and inspection.
+   */
+  listRetired(agentId?: string): KnowledgeEntry[] {
     if (agentId !== undefined) {
       const rows = this.db.prepare(`
         SELECT * FROM knowledge_entries
-        WHERE agentId = ?
-        ORDER BY score DESC, createdAt DESC
+        WHERE agentId = ? AND retiredAt IS NOT NULL
+        ORDER BY retiredAt DESC
       `).all(agentId) as KnowledgeRow[];
       return rows.map((row) => this.rowToEntry(row));
     }
     const rows = this.db.prepare(`
       SELECT * FROM knowledge_entries
-      ORDER BY score DESC, createdAt DESC
+      WHERE retiredAt IS NOT NULL
+      ORDER BY retiredAt DESC
     `).all() as KnowledgeRow[];
     return rows.map((row) => this.rowToEntry(row));
+  }
+
+  /**
+   * Permanently remove retired entries that were soft-deleted more than
+   * `olderThanDays` days ago (default: 0, meaning all retired entries).
+   * Returns the number of rows permanently deleted.
+   */
+  purgeRetired(olderThanDays = 0): number {
+    const cutoff = new Date(Date.now() - olderThanDays * 86_400_000).toISOString();
+    const result = this.db.prepare(`
+      DELETE FROM knowledge_entries
+      WHERE retiredAt IS NOT NULL AND retiredAt <= ?
+    `).run(cutoff);
+    return result.changes;
   }
 
   /** Close the database connection. */
@@ -184,6 +241,7 @@ export class KnowledgeDbStore {
       confidence: row.score,
       createdAt: row.createdAt,
       expiresAt: row.expiresAt ?? undefined,
+      retiredAt: row.retiredAt ?? undefined,
       tags: row.metadata ? (JSON.parse(row.metadata) as string[]) : undefined,
     };
   }
