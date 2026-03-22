@@ -176,20 +176,18 @@ export class KnowledgeDbStore {
    * `includeRetired: true` to include them.
    */
   list(agentId?: string, options?: { includeRetired?: boolean }): KnowledgeEntry[] {
-    const retiredClause = options?.includeRetired ? "" : "AND retiredAt IS NULL";
+    const includeRetired = options?.includeRetired ?? false;
     if (agentId !== undefined) {
-      const rows = this.db.prepare(`
-        SELECT * FROM knowledge_entries
-        WHERE agentId = ? ${retiredClause}
-        ORDER BY score DESC, createdAt DESC
-      `).all(agentId) as KnowledgeRow[];
+      const sql = includeRetired
+        ? `SELECT * FROM knowledge_entries WHERE agentId = ? ORDER BY score DESC, createdAt DESC`
+        : `SELECT * FROM knowledge_entries WHERE agentId = ? AND retiredAt IS NULL ORDER BY score DESC, createdAt DESC`;
+      const rows = this.db.prepare(sql).all(agentId) as KnowledgeRow[];
       return rows.map((row) => this.rowToEntry(row));
     }
-    const rows = this.db.prepare(`
-      SELECT * FROM knowledge_entries
-      WHERE 1=1 ${retiredClause}
-      ORDER BY score DESC, createdAt DESC
-    `).all() as KnowledgeRow[];
+    const sql = includeRetired
+      ? `SELECT * FROM knowledge_entries ORDER BY score DESC, createdAt DESC`
+      : `SELECT * FROM knowledge_entries WHERE retiredAt IS NULL ORDER BY score DESC, createdAt DESC`;
+    const rows = this.db.prepare(sql).all() as KnowledgeRow[];
     return rows.map((row) => this.rowToEntry(row));
   }
 

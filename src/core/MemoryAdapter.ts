@@ -232,9 +232,7 @@ export class MemoryAdapter {
       }
     }, intervalMs);
     // Allow the Node.js process to exit even if the interval is still running.
-    if (typeof this.sweepIntervalHandle === "object" && this.sweepIntervalHandle !== null) {
-      (this.sweepIntervalHandle as NodeJS.Timeout).unref?.();
-    }
+    this.sweepIntervalHandle.unref();
     return this;
   }
 
