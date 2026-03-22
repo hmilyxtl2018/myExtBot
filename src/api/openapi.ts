@@ -8,7 +8,7 @@
  *   setupSwagger(app);
  *
  * Usage (standalone — generate docs/openapi.json):
- *   ts-node src/api/openapi.ts
+ *   npm run docs:api
  */
 
 import swaggerJsdoc from "swagger-jsdoc";
@@ -117,19 +117,16 @@ export function setupSwagger(app: Express): void {
 
 // ── Standalone: generate docs/openapi.json ────────────────────────────────────
 
-// When run directly with: ts-node src/api/openapi.ts [--output path]
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  import("fs").then(({ writeFileSync, mkdirSync }) => {
-    import("path").then(({ resolve: r }) => {
-      const outPath = (() => {
-        const idx = process.argv.indexOf("--output");
-        return idx !== -1 && process.argv[idx + 1]
-          ? r(process.argv[idx + 1])
-          : r(__dirname, "../../docs/openapi.json");
-      })();
-      mkdirSync(r(outPath, ".."), { recursive: true });
-      writeFileSync(outPath, JSON.stringify(swaggerSpec, null, 2));
-      console.log(`OpenAPI spec written to ${outPath}`);
-    });
-  });
+// When run directly with: tsx src/api/openapi.ts [--output path]
+const isMain = process.argv[1]?.endsWith("openapi.ts") || process.argv[1]?.endsWith("openapi.js");
+if (isMain) {
+  const { writeFileSync, mkdirSync } = await import("fs");
+  const { resolve: r } = await import("path");
+  const idx = process.argv.indexOf("--output");
+  const outPath = idx !== -1 && process.argv[idx + 1]
+    ? r(process.argv[idx + 1])
+    : r(__dirname, "../../docs/openapi.json");
+  mkdirSync(r(outPath, ".."), { recursive: true });
+  writeFileSync(outPath, JSON.stringify(swaggerSpec, null, 2));
+  console.log(`OpenAPI spec written to ${outPath}`);
 }

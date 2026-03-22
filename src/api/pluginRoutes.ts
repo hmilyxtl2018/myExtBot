@@ -75,24 +75,6 @@ export function createPluginRoutes(
   }
 
   /**
-   * @openapi
-   * /api/plugins:
-   *   get:
-   *     tags: [Plugins]
-   *     summary: List all marketplace plugins with installation status
-   *     responses:
-   *       200:
-   *         description: Array of plugin summaries
-   *         content:
-   *           application/json:
-   *             schema:
-   *               type: array
-   *               items:
-   *                 $ref: '#/components/schemas/PluginSummary'
-   *       500:
-   *         description: Internal error
-   */
-  /**
    * GET /api/plugins
    * Returns all marketplace plugins with their installation status.
    */
@@ -112,24 +94,6 @@ export function createPluginRoutes(
     }
   });
 
-  /**
-   * @openapi
-   * /api/plugins/installed:
-   *   get:
-   *     tags: [Plugins]
-   *     summary: List only installed plugins
-   *     responses:
-   *       200:
-   *         description: Array of installed plugin summaries
-   *         content:
-   *           application/json:
-   *             schema:
-   *               type: array
-   *               items:
-   *                 $ref: '#/components/schemas/PluginSummary'
-   *       500:
-   *         description: Internal error
-   */
   /**
    * GET /api/plugins/installed
    * Returns only the currently installed plugins.

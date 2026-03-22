@@ -1195,6 +1195,7 @@
           "Lineage"
         ],
         "summary": "Get lineage graph as Mermaid flowchart text",
+        "description": "Returns Mermaid flowchart text for the lineage graph in the given time range.",
         "parameters": [
           {
             "in": "query",
@@ -1202,7 +1203,8 @@
             "schema": {
               "type": "string",
               "format": "date-time"
-            }
+            },
+            "description": "Filter start time (ISO 8601)"
           },
           {
             "in": "query",
@@ -1210,12 +1212,13 @@
             "schema": {
               "type": "string",
               "format": "date-time"
-            }
+            },
+            "description": "Filter end time (ISO 8601)"
           }
         ],
         "responses": {
           "200": {
-            "description": "Mermaid flowchart text",
+            "description": "Mermaid flowchart text (text/plain)",
             "content": {
               "text/plain": {
                 "schema": {
@@ -1233,6 +1236,7 @@
           "Lineage"
         ],
         "summary": "Get summary statistics for the lineage graph",
+        "description": "Returns aggregated statistics — totalNodes, totalEdges, agentNodes, toolNodes, successRate, timeRange.",
         "responses": {
           "200": {
             "description": "Summary statistics",
@@ -1501,60 +1505,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/plugins": {
-      "get": {
-        "tags": [
-          "Plugins"
-        ],
-        "summary": "List all plugins (PluginManager — legacy)",
-        "responses": {
-          "200": {
-            "description": "Array of plugin summaries",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PluginSummary",
-                    "type": "object"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal error"
-          }
-        }
-      }
-    },
-    "/api/plugins/installed": {
-      "get": {
-        "tags": [
-          "Plugins"
-        ],
-        "summary": "List installed plugins (PluginManager — legacy)",
-        "responses": {
-          "200": {
-            "description": "Array of installed plugin summaries",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PluginSummary",
-                    "type": "object"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal error"
           }
         }
       }
@@ -2695,6 +2645,52 @@
                     "byTool": {
                       "type": "object"
                     }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins": {
+      "get": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "List all plugins (PluginManager — legacy)",
+        "responses": {
+          "200": {
+            "description": "Array of plugin summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/installed": {
+      "get": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "List installed plugins (PluginManager — legacy)",
+        "responses": {
+          "200": {
+            "description": "Array of installed plugin summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
                   }
                 }
               }

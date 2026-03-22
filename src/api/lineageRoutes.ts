@@ -81,31 +81,27 @@ export function createLineageRoutes(manager: McpServiceListManager): Router {
    *   get:
    *     tags: [Lineage]
    *     summary: Get lineage graph as Mermaid flowchart text
+   *     description: Returns Mermaid flowchart text for the lineage graph in the given time range.
    *     parameters:
    *       - in: query
    *         name: startTime
    *         schema:
    *           type: string
    *           format: date-time
+   *         description: Filter start time (ISO 8601)
    *       - in: query
    *         name: endTime
    *         schema:
    *           type: string
    *           format: date-time
+   *         description: Filter end time (ISO 8601)
    *     responses:
    *       200:
-   *         description: Mermaid flowchart text
+   *         description: Mermaid flowchart text (text/plain)
    *         content:
    *           text/plain:
    *             schema:
    *               type: string
-   */
-  /**
-   * GET /api/lineage/mermaid
-   * Query params:
-   *   startTime?: ISO 8601
-   *   endTime?:   ISO 8601
-   * Response: text/plain — Mermaid flowchart text
    */
   router.get("/mermaid", (req: Request, res: Response) => {
     const { startTime, endTime } = req.query as Record<string, string | undefined>;
@@ -121,6 +117,7 @@ export function createLineageRoutes(manager: McpServiceListManager): Router {
    *   get:
    *     tags: [Lineage]
    *     summary: Get summary statistics for the lineage graph
+   *     description: Returns aggregated statistics — totalNodes, totalEdges, agentNodes, toolNodes, successRate, timeRange.
    *     responses:
    *       200:
    *         description: Summary statistics
@@ -141,10 +138,6 @@ export function createLineageRoutes(manager: McpServiceListManager): Router {
    *                   type: number
    *                 timeRange:
    *                   type: object
-   */
-  /**
-   * GET /api/lineage/summary
-   * Response: { totalNodes, totalEdges, agentNodes, toolNodes, successRate, timeRange }
    */
   router.get("/summary", (_req: Request, res: Response) => {
     const summary = manager.getLineageSummary();
