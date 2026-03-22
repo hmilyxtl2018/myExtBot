@@ -4,11 +4,9 @@
  * Usage:
  *   const result = validateAgentSpec(spec, existingAgentIds);
  *   if (!result.valid) throw new Error(result.errors.join("; "));
- *
- * TODO: Future schema versioning — when AgentSpec introduces a `specVersion`
- * field, add a version-dispatch table here (e.g. { "1.0": validateV1, "2.0": validateV2 })
- * so that each spec version uses the appropriate validator.
  */
+
+import { SUPPORTED_SPEC_VERSIONS, CURRENT_SPEC_VERSION } from "./types";
 
 /** Valid control-loop execution strategies (Pillar 2). */
 export const VALID_CONTROL_LOOP_TYPES = [
@@ -26,28 +24,30 @@ export interface AgentSpecValidationResult {
   errors: string[];
 }
 
+// ── Version-dispatch table ─────────────────────────────────────────────────────
+
 /**
- * Validates an AgentSpec object against the 9-pillar schema.
- *
- * @param spec            - The raw spec object to validate (typed as `unknown` to
- *                          accept untrusted/arbitrary input).
- * @param existingAgentIds - IDs of agents already registered in the registry.
- *                          Used to validate Pillar 7 delegation target references.
- * @returns `{ valid, errors }` — `valid` is true iff `errors` is empty.
+ * Maps each supported specVersion to its core validator function.
+ * When a new version is introduced, add a new entry here.
  */
-export function validateAgentSpec(
-  spec: unknown,
-  existingAgentIds: string[] = []
-): AgentSpecValidationResult {
+const VALIDATORS: Record<
+  string,
+  (s: Record<string, unknown>, existingAgentIds: string[]) => string[]
+> = {
+  "1.0": validateV1,
+};
+
+/**
+ * Core 9-pillar validator for specVersion "1.0".
+ * Extracted so it can be referenced in the dispatch table above.
+ */
+function validateV1(
+  s: Record<string, unknown>,
+  existingAgentIds: string[]
+): string[] {
   const errors: string[] = [];
 
-  if (spec === null || spec === undefined || typeof spec !== "object") {
-    return { valid: false, errors: ["AgentSpec must be a non-null object"] };
-  }
-
-  const s = spec as Record<string, unknown>;
-
-  // ── Pillar 1 — Identity ────────────────────────────────────────────────────
+  // ── Pillar 1 — Identity ──────────────────────────────────────────────────
   if (typeof s["id"] !== "string" || s["id"].trim() === "") {
     errors.push("Pillar 1: id must be a non-empty string");
   }
@@ -60,7 +60,7 @@ export function validateAgentSpec(
     }
   }
 
-  // ── Pillar 2 — Control Loop ────────────────────────────────────────────────
+  // ── Pillar 2 — Control Loop ──────────────────────────────────────────────
   if (s["controlLoop"] !== undefined) {
     if (!s["controlLoop"] || typeof s["controlLoop"] !== "object" || Array.isArray(s["controlLoop"])) {
       errors.push("Pillar 2: controlLoop must be an object if present");
@@ -74,7 +74,7 @@ export function validateAgentSpec(
     }
   }
 
-  // ── Pillar 3 — Tools ──────────────────────────────────────────────────────
+  // ── Pillar 3 — Tools ────────────────────────────────────────────────────
   if (s["tools"] !== undefined) {
     if (!Array.isArray(s["tools"])) {
       errors.push("Pillar 3: tools must be an array if present");
@@ -92,7 +92,7 @@ export function validateAgentSpec(
     }
   }
 
-  // ── Pillar 4 — Guardrails ──────────────────────────────────────────────────
+  // ── Pillar 4 — Guardrails ────────────────────────────────────────────────
   if (s["guardrails"] !== undefined) {
     if (!s["guardrails"] || typeof s["guardrails"] !== "object" || Array.isArray(s["guardrails"])) {
       errors.push("Pillar 4: guardrails must be an object if present");
@@ -149,7 +149,7 @@ export function validateAgentSpec(
     }
   }
 
-  // ── Pillar 5 — Prompts ────────────────────────────────────────────────────
+  // ── Pillar 5 — Prompts ──────────────────────────────────────────────────
   if (s["prompts"] !== undefined) {
     if (!s["prompts"] || typeof s["prompts"] !== "object" || Array.isArray(s["prompts"])) {
       errors.push("Pillar 5: prompts must be an object if present");
@@ -167,7 +167,7 @@ export function validateAgentSpec(
     }
   }
 
-  // ── Pillar 6 — Intent & Persona ───────────────────────────────────────────
+  // ── Pillar 6 — Intent & Persona ──────────────────────────────────────────
   if (s["intents"] !== undefined) {
     if (!Array.isArray(s["intents"])) {
       errors.push("Pillar 6: intents must be an array if present");
@@ -205,7 +205,7 @@ export function validateAgentSpec(
     }
   }
 
-  // ── Pillar 7 — Communication ──────────────────────────────────────────────
+  // ── Pillar 7 — Communication ─────────────────────────────────────────────
   if (s["communication"] !== undefined) {
     if (!s["communication"] || typeof s["communication"] !== "object" || Array.isArray(s["communication"])) {
       errors.push("Pillar 7: communication must be an object if present");
@@ -248,7 +248,7 @@ export function validateAgentSpec(
     }
   }
 
-  // ── Pillar 8 — Orchestration ──────────────────────────────────────────────
+  // ── Pillar 8 — Orchestration ─────────────────────────────────────────────
   if (s["orchestration"] !== undefined) {
     if (!s["orchestration"] || typeof s["orchestration"] !== "object" || Array.isArray(s["orchestration"])) {
       errors.push("Pillar 8: orchestration must be an object if present");
@@ -275,7 +275,7 @@ export function validateAgentSpec(
     }
   }
 
-  // ── Pillar 9 — Memory ─────────────────────────────────────────────────────
+  // ── Pillar 9 — Memory ────────────────────────────────────────────────────
   if (s["memory"] !== undefined) {
     if (!s["memory"] || typeof s["memory"] !== "object" || Array.isArray(s["memory"])) {
       errors.push("Pillar 9: memory must be an object if present");
@@ -297,5 +297,51 @@ export function validateAgentSpec(
     }
   }
 
-  return { valid: errors.length === 0, errors };
+  return errors;
+}
+
+/**
+ * Validates an AgentSpec object against the 9-pillar schema.
+ * Dispatches to the appropriate version-specific validator based on `specVersion`
+ * (defaults to `CURRENT_SPEC_VERSION` when the field is absent).
+ *
+ * @param spec            - The raw spec object to validate (typed as `unknown` to
+ *                          accept untrusted/arbitrary input).
+ * @param existingAgentIds - IDs of agents already registered in the registry.
+ *                          Used to validate Pillar 7 delegation target references.
+ * @returns `{ valid, errors }` — `valid` is true iff `errors` is empty.
+ */
+export function validateAgentSpec(
+  spec: unknown,
+  existingAgentIds: string[] = []
+): AgentSpecValidationResult {
+  if (spec === null || spec === undefined || typeof spec !== "object") {
+    return { valid: false, errors: ["AgentSpec must be a non-null object"] };
+  }
+
+  const s = spec as Record<string, unknown>;
+  const errors: string[] = [];
+
+  // ── specVersion validation & dispatch ────────────────────────────────────
+  let resolvedVersion: string = CURRENT_SPEC_VERSION;
+  if (s["specVersion"] !== undefined) {
+    if (typeof s["specVersion"] !== "string" || s["specVersion"].trim() === "") {
+      errors.push("specVersion must be a non-empty string if present");
+    } else if (!(SUPPORTED_SPEC_VERSIONS as readonly string[]).includes(s["specVersion"])) {
+      errors.push(
+        `specVersion "${s["specVersion"]}" is not supported; supported versions: [${SUPPORTED_SPEC_VERSIONS.join(", ")}]`
+      );
+    } else {
+      resolvedVersion = s["specVersion"];
+    }
+  }
+
+  // Short-circuit if specVersion itself is invalid — no point running pillar checks
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
+
+  const versionValidator = VALIDATORS[resolvedVersion];
+  const pillarErrors = versionValidator(s, existingAgentIds);
+  return { valid: pillarErrors.length === 0, errors: pillarErrors };
 }
