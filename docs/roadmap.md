@@ -103,8 +103,10 @@ This document tracks what has been delivered, what is in progress, and what come
 
 ### 5.2 API Documentation
 
-- Auto-generate OpenAPI/Swagger spec from Express route definitions.
-- Publish interactive API docs to GitHub Pages alongside existing docs.
+- Auto-generate OpenAPI/Swagger spec from Express route definitions. ✅ Done (#54)
+- Publish interactive API docs to GitHub Pages alongside existing docs. ✅ Done (#54)
+- Interactive Swagger UI at `/api-docs`, raw spec at `/api-docs/json`. ✅ Done (#54)
+- `npm run docs:api` generates `docs/openapi.json` for static hosting. ✅ Done (#54)
 
 ### 5.3 Integration & E2E Tests
 

@@ -31,6 +31,7 @@ import { createLifecycleRoutes } from "./api/lifecycleRoutes";
 import { createHealthRoutes } from "./api/healthRoutes";
 import { createPipelineRoutes } from "./api/pipelineRoutes";
 import { createPluginRoutes } from "./api/pluginRoutes";
+import { setupSwagger } from "./api/openapi";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -157,11 +158,83 @@ app.use("/api", createLifecycleRoutes(manager));
 app.use("/api", createPipelineRoutes(manager));
 app.use("/api", createHealthRoutes(manager));
 
+// API documentation (Swagger UI at /api-docs, raw JSON at /api-docs/json)
+setupSwagger(app);
+
 // Plugin manager
 const pluginManager = new PluginManager(manager);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Scene:
+ *       type: object
+ *       required: [id, name, serviceNames]
+ *       properties:
+ *         id:
+ *           type: string
+ *         name:
+ *           type: string
+ *         description:
+ *           type: string
+ *         serviceNames:
+ *           type: array
+ *           items:
+ *             type: string
+ *     AgentProfile:
+ *       type: object
+ *       required: [id, name]
+ *       properties:
+ *         id:
+ *           type: string
+ *         name:
+ *           type: string
+ *         description:
+ *           type: string
+ *         sceneId:
+ *           type: string
+ *         allowedServices:
+ *           type: array
+ *           items:
+ *             type: string
+ *         canDelegateTo:
+ *           type: array
+ *           items:
+ *             type: string
+ *         primarySkill:
+ *           type: string
+ *         secondarySkills:
+ *           type: array
+ *           items:
+ *             type: string
+ *         capabilities:
+ *           type: array
+ *           items:
+ *             type: string
+ *         constraints:
+ *           type: array
+ *           items:
+ *             type: string
+ *         systemPrompt:
+ *           type: string
+ *         intents:
+ *           type: array
+ *           items:
+ *             type: string
+ *         domains:
+ *           type: array
+ *           items:
+ *             type: string
+ *         languages:
+ *           type: array
+ *           items:
+ *             type: string
+ *         responseStyle:
+ *           type: string
+ */
 function extractQuery(req: Request, res: Response): string | null {
   const q = req.query.query;
   if (typeof q !== "string" || q.trim() === "") {
@@ -173,10 +246,57 @@ function extractQuery(req: Request, res: Response): string | null {
 
 // ── Services API ──────────────────────────────────────────────────────────────
 
+/**
+ * @openapi
+ * /api/services:
+ *   get:
+ *     tags: [Services]
+ *     summary: List all registered services
+ *     responses:
+ *       200:
+ *         description: Array of service descriptors
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                   enabled:
+ *                     type: boolean
+ */
 app.get("/api/services", (_req: Request, res: Response) => {
   res.json(manager.listServices());
 });
 
+/**
+ * @openapi
+ * /api/services/{name}/enable:
+ *   post:
+ *     tags: [Services]
+ *     summary: Enable a service by name
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Service enabled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessOk'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post("/api/services/:name/enable", (req: Request, res: Response) => {
   try {
     manager.enableService(String(req.params.name));
@@ -186,6 +306,32 @@ app.post("/api/services/:name/enable", (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/services/{name}/disable:
+ *   post:
+ *     tags: [Services]
+ *     summary: Disable a service by name
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Service disabled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessOk'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post("/api/services/:name/disable", (req: Request, res: Response) => {
   try {
     manager.disableService(String(req.params.name));
@@ -195,10 +341,71 @@ app.post("/api/services/:name/disable", (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/tools:
+ *   get:
+ *     tags: [Tools]
+ *     summary: List all tool definitions from enabled services
+ *     responses:
+ *       200:
+ *         description: Array of tool definitions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                   description:
+ *                     type: string
+ *                   inputSchema:
+ *                     type: object
+ */
 app.get("/api/tools", (_req: Request, res: Response) => {
   res.json(manager.getToolDefinitions());
 });
 
+/**
+ * @openapi
+ * /api/dispatch:
+ *   post:
+ *     tags: [Tools]
+ *     summary: Dispatch a tool call
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [toolName]
+ *             properties:
+ *               toolName:
+ *                 type: string
+ *                 maxLength: 128
+ *               arguments:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Tool call result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 result:
+ *                   type: object
+ *       400:
+ *         description: Validation or execution error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post("/api/dispatch", async (req: Request, res: Response) => {
   const { toolName, arguments: args } = req.body as {
     toolName?: string;
@@ -221,10 +428,57 @@ app.post("/api/dispatch", async (req: Request, res: Response) => {
 
 // ── Scenes API ────────────────────────────────────────────────────────────────
 
+/**
+ * @openapi
+ * /api/scenes:
+ *   get:
+ *     tags: [Scenes]
+ *     summary: List all registered scenes
+ *     responses:
+ *       200:
+ *         description: Array of Scene objects
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Scene'
+ */
 app.get("/api/scenes", (_req: Request, res: Response) => {
   res.json(manager.listScenes());
 });
 
+/**
+ * @openapi
+ * /api/scenes:
+ *   post:
+ *     tags: [Scenes]
+ *     summary: Register a new scene
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Scene'
+ *     responses:
+ *       200:
+ *         description: Scene registered
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 scene:
+ *                   $ref: '#/components/schemas/Scene'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post("/api/scenes", (req: Request, res: Response) => {
   const { id, name, description, serviceNames } = req.body as Partial<Scene>;
 
@@ -250,6 +504,26 @@ app.post("/api/scenes", (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/scenes/{id}:
+ *   delete:
+ *     tags: [Scenes]
+ *     summary: Remove a scene by ID
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Scene removed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessOk'
+ */
 app.delete("/api/scenes/:id", (req: Request, res: Response) => {
   const id = String(req.params.id);
   manager.removeScene(id);
@@ -259,10 +533,66 @@ app.delete("/api/scenes/:id", (req: Request, res: Response) => {
 
 // ── Agents API ────────────────────────────────────────────────────────────────
 
+/**
+ * @openapi
+ * /api/agents:
+ *   get:
+ *     tags: [Agents]
+ *     summary: List all registered agents
+ *     responses:
+ *       200:
+ *         description: Array of AgentProfile objects
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/AgentProfile'
+ */
 app.get("/api/agents", (_req: Request, res: Response) => {
   res.json(manager.listAgents());
 });
 
+/**
+ * @openapi
+ * /api/agents/route:
+ *   get:
+ *     tags: [Agents]
+ *     summary: Route a query to the most relevant agents
+ *     parameters:
+ *       - in: query
+ *         name: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Natural language query to route
+ *       - in: query
+ *         name: topN
+ *         schema:
+ *           type: integer
+ *           default: 3
+ *         description: Number of top suggestions to return
+ *     responses:
+ *       200:
+ *         description: Array of agent routing suggestions (sorted by score)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   agentId:
+ *                     type: string
+ *                   score:
+ *                     type: number
+ *       400:
+ *         description: Missing query parameter
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get("/api/agents/route", (req: Request, res: Response) => {
   const query = extractQuery(req, res);
   if (query === null) return;
@@ -272,6 +602,35 @@ app.get("/api/agents/route", (req: Request, res: Response) => {
   res.json(manager.routeAgent(query, topN));
 });
 
+/**
+ * @openapi
+ * /api/agents/route/best:
+ *   get:
+ *     tags: [Agents]
+ *     summary: Get the single best-matching agent for a query
+ *     parameters:
+ *       - in: query
+ *         name: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Best agent ID and suggestion
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 agentId:
+ *                   type: string
+ *                   nullable: true
+ *                 suggestion:
+ *                   type: object
+ *                   nullable: true
+ *       400:
+ *         description: Missing query parameter
+ */
 app.get("/api/agents/route/best", (req: Request, res: Response) => {
   const query = extractQuery(req, res);
   if (query === null) return;
@@ -281,6 +640,34 @@ app.get("/api/agents/route/best", (req: Request, res: Response) => {
   res.json({ agentId, suggestion: top && top.score > 0 ? top : null });
 });
 
+/**
+ * @openapi
+ * /api/agents/{id}/tools:
+ *   get:
+ *     tags: [Agents]
+ *     summary: Get tool definitions available to a specific agent
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Array of tool definitions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *       404:
+ *         description: Agent not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get("/api/agents/:id/tools", (req: Request, res: Response) => {
   try {
     res.json(manager.getToolDefinitionsForAgent(String(req.params.id)));
@@ -289,6 +676,32 @@ app.get("/api/agents/:id/tools", (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/agents/{id}:
+ *   get:
+ *     tags: [Agents]
+ *     summary: Get a specific agent by ID
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: The agent profile
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AgentProfile'
+ *       404:
+ *         description: Agent not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get("/api/agents/:id", (req: Request, res: Response) => {
   const agent = manager.listAgents().find((a) => a.id === String(req.params.id));
   if (!agent) {
@@ -298,6 +711,37 @@ app.get("/api/agents/:id", (req: Request, res: Response) => {
   res.json(agent);
 });
 
+/**
+ * @openapi
+ * /api/agents:
+ *   post:
+ *     tags: [Agents]
+ *     summary: Register a new agent
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/AgentProfile'
+ *     responses:
+ *       200:
+ *         description: Agent registered
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 agent:
+ *                   $ref: '#/components/schemas/AgentProfile'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.post("/api/agents", (req: Request, res: Response) => {
   const body = req.body as Partial<AgentProfile>;
   const idErr = validateId(body.id);
@@ -337,6 +781,42 @@ app.post("/api/agents", (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/agents/{id}:
+ *   patch:
+ *     tags: [Agents]
+ *     summary: Update an existing agent (partial update)
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             description: Partial AgentProfile fields to update
+ *     responses:
+ *       200:
+ *         description: Agent updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 agent:
+ *                   $ref: '#/components/schemas/AgentProfile'
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Agent not found
+ */
 app.patch("/api/agents/:id", (req: Request, res: Response) => {
   const id = String(req.params.id);
   const patch = req.body as Partial<Omit<AgentProfile, "id">>;
@@ -354,6 +834,26 @@ app.patch("/api/agents/:id", (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/agents/{id}:
+ *   delete:
+ *     tags: [Agents]
+ *     summary: Remove an agent by ID
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Agent removed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessOk'
+ */
 app.delete("/api/agents/:id", (req: Request, res: Response) => {
   const id = String(req.params.id);
   manager.removeAgent(id);
@@ -361,6 +861,47 @@ app.delete("/api/agents/:id", (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+/**
+ * @openapi
+ * /api/dispatch-as/{agentId}:
+ *   post:
+ *     tags: [Agents]
+ *     summary: Dispatch a tool call as a specific agent
+ *     parameters:
+ *       - in: path
+ *         name: agentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [toolName]
+ *             properties:
+ *               toolName:
+ *                 type: string
+ *               arguments:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Tool call result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 agentId:
+ *                   type: string
+ *                 result:
+ *                   type: object
+ *       400:
+ *         description: Validation or execution error
+ */
 app.post("/api/dispatch-as/:agentId", async (req: Request, res: Response) => {
   const agentId = String(req.params.agentId);
   const { toolName, arguments: args } = req.body as {
@@ -382,6 +923,51 @@ app.post("/api/dispatch-as/:agentId", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/agents/{fromAgentId}/delegate:
+ *   post:
+ *     tags: [Delegation]
+ *     summary: Delegate a tool call from one agent to another
+ *     parameters:
+ *       - in: path
+ *         name: fromAgentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [toAgentId, toolName]
+ *             properties:
+ *               toAgentId:
+ *                 type: string
+ *               toolName:
+ *                 type: string
+ *               arguments:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Delegation result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 fromAgentId:
+ *                   type: string
+ *                 toAgentId:
+ *                   type: string
+ *                 result:
+ *                   type: object
+ *       400:
+ *         description: Validation or execution error
+ */
 app.post("/api/agents/:fromAgentId/delegate", async (req: Request, res: Response) => {
   const fromAgentId = String(req.params.fromAgentId);
   const { toAgentId, toolName, arguments: args } = req.body as {
@@ -406,6 +992,60 @@ app.post("/api/agents/:fromAgentId/delegate", async (req: Request, res: Response
 
 // ── Delegation log API ────────────────────────────────────────────────────────
 
+/**
+ * @openapi
+ * /api/delegation-log:
+ *   get:
+ *     tags: [Delegation]
+ *     summary: Query delegation log entries
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Date to query (YYYY-MM-DD, defaults to today)
+ *       - in: query
+ *         name: agentId
+ *         schema:
+ *           type: string
+ *         description: Filter by fromAgentId or toAgentId
+ *       - in: query
+ *         name: toolName
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: success
+ *         schema:
+ *           type: string
+ *           enum: ["true", "false"]
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       200:
+ *         description: Delegation log entries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 entries:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 total:
+ *                   type: integer
+ *                 date:
+ *                   type: string
+ */
 app.get("/api/delegation-log", async (req: Request, res: Response) => {
   const { agentId, toolName, date, success, limit, offset } = req.query as Record<string, string | undefined>;
   const reader = new DelegationLogReader();
@@ -421,12 +1061,62 @@ app.get("/api/delegation-log", async (req: Request, res: Response) => {
   res.json({ entries, total: entries.length, date: resolvedDate });
 });
 
+/**
+ * @openapi
+ * /api/delegation-log/dates:
+ *   get:
+ *     tags: [Delegation]
+ *     summary: List all dates for which delegation log files exist
+ *     responses:
+ *       200:
+ *         description: Available dates in descending order
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 dates:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                     format: date
+ */
 app.get("/api/delegation-log/dates", async (_req: Request, res: Response) => {
   const reader = new DelegationLogReader();
   const dates = await reader.listAvailableDates();
   res.json({ dates });
 });
 
+/**
+ * @openapi
+ * /api/delegation-log/summary:
+ *   get:
+ *     tags: [Delegation]
+ *     summary: Get aggregated delegation statistics for a date
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Date to summarise (defaults to today)
+ *     responses:
+ *       200:
+ *         description: Delegation summary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalCalls:
+ *                   type: integer
+ *                 successRate:
+ *                   type: number
+ *                 byAgent:
+ *                   type: object
+ *                 byTool:
+ *                   type: object
+ */
 app.get("/api/delegation-log/summary", async (req: Request, res: Response) => {
   const { date } = req.query as { date?: string };
   const reader = new DelegationLogReader();
@@ -455,14 +1145,77 @@ app.get("/api/delegation-log/summary", async (req: Request, res: Response) => {
 
 // ── Plugins API ───────────────────────────────────────────────────────────────
 
+/**
+ * @openapi
+ * /api/plugins:
+ *   get:
+ *     tags: [Plugins]
+ *     summary: List all plugins (PluginManager — legacy)
+ *     responses:
+ *       200:
+ *         description: Array of plugin summaries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ */
 app.get("/api/plugins", (_req: Request, res: Response) => {
   res.json(pluginManager.listAll());
 });
 
+/**
+ * @openapi
+ * /api/plugins/installed:
+ *   get:
+ *     tags: [Plugins]
+ *     summary: List installed plugins (PluginManager — legacy)
+ *     responses:
+ *       200:
+ *         description: Array of installed plugin summaries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ */
 app.get("/api/plugins/installed", (_req: Request, res: Response) => {
   res.json(pluginManager.listInstalled());
 });
 
+/**
+ * @openapi
+ * /api/plugins/install:
+ *   post:
+ *     tags: [Plugins]
+ *     summary: Install a plugin by ID (PluginManager — legacy)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [pluginId]
+ *             properties:
+ *               pluginId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Plugin installed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 plugin:
+ *                   type: object
+ *       400:
+ *         description: Validation or install error
+ */
 app.post("/api/plugins/install", (req: Request, res: Response) => {
   const { pluginId } = req.body as { pluginId?: string };
   const idErr = validateId(pluginId);
@@ -477,6 +1230,33 @@ app.post("/api/plugins/install", (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @openapi
+ * /api/plugins/install-from-url:
+ *   post:
+ *     tags: [Plugins]
+ *     summary: Install a plugin from a URL (PluginManager — legacy)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [url]
+ *             properties:
+ *               url:
+ *                 type: string
+ *                 format: uri
+ *     responses:
+ *       200:
+ *         description: Plugin installed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *       400:
+ *         description: Validation or install error
+ */
 app.post("/api/plugins/install-from-url", async (req: Request, res: Response) => {
   const { url } = req.body as { url?: string };
   const urlErr = validatePluginUrl(url);
@@ -491,6 +1271,28 @@ app.post("/api/plugins/install-from-url", async (req: Request, res: Response) =>
   }
 });
 
+/**
+ * @openapi
+ * /api/plugins/{pluginId}:
+ *   delete:
+ *     tags: [Plugins]
+ *     summary: Uninstall a plugin (PluginManager — legacy)
+ *     parameters:
+ *       - in: path
+ *         name: pluginId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Plugin uninstalled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessOk'
+ *       400:
+ *         description: Uninstall error
+ */
 app.delete("/api/plugins/:pluginId", (req: Request, res: Response) => {
   const pluginId = String(req.params.pluginId);
   try {
@@ -505,12 +1307,62 @@ app.delete("/api/plugins/:pluginId", (req: Request, res: Response) => {
 
 // ── Security / Audit API ──────────────────────────────────────────────────────
 
+/**
+ * @openapi
+ * /api/security/audit-log:
+ *   get:
+ *     tags: [Security]
+ *     summary: Get in-memory audit log entries
+ *     responses:
+ *       200:
+ *         description: Array of audit log entries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   timestamp:
+ *                     type: string
+ *                     format: date-time
+ *                   method:
+ *                     type: string
+ *                   path:
+ *                     type: string
+ *                   status:
+ *                     type: integer
+ *                   detail:
+ *                     type: string
+ */
 app.get("/api/security/audit-log", (_req: Request, res: Response) => {
   res.json(getAuditLog());
 });
 
 // ── Health check ──────────────────────────────────────────────────────────────
 
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     tags: [Health]
+ *     summary: Basic health check (no auth required)
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });

@@ -46,6 +46,40 @@ See **[docs/roadmap.md](docs/roadmap.md)** for the full project roadmap — comp
 
 ---
 
+## API Documentation
+
+myExtBot exposes a fully auto-generated OpenAPI 3.0 (Swagger) spec for all REST endpoints.
+
+### Interactive Swagger UI
+
+Start the server and open `http://localhost:3000/api-docs` in your browser.
+
+```bash
+npm run dev        # or: node src/server.ts
+# then visit: http://localhost:3000/api-docs
+```
+
+### Raw OpenAPI JSON
+
+The raw machine-readable spec is available at:
+
+```
+GET http://localhost:3000/api-docs/json
+```
+
+### Generate Static Spec
+
+Generate `docs/openapi.json` for static hosting or CI pipelines:
+
+```bash
+npm run docs:api
+# outputs: docs/openapi.json
+```
+
+The GitHub Pages workflow automatically regenerates and deploys the spec on every push to `main`.
+
+---
+
 ## 项目结构
 
 ```

@@ -11,14 +11,91 @@ import { AgentPipeline } from "../core/types";
  * DELETE /api/pipelines/:id       → unregister a pipeline
  * POST   /api/pipelines/:id/run   → run a pipeline
  */
+
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     PipelineStep:
+ *       type: object
+ *       required: [agentId, toolName]
+ *       properties:
+ *         agentId:
+ *           type: string
+ *         toolName:
+ *           type: string
+ *         arguments:
+ *           type: object
+ *     AgentPipeline:
+ *       type: object
+ *       required: [id, name, steps]
+ *       properties:
+ *         id:
+ *           type: string
+ *         name:
+ *           type: string
+ *         description:
+ *           type: string
+ *         steps:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/PipelineStep'
+ */
 export function createPipelineRouter(manager: McpServiceListManager): Router {
   const router = Router();
 
+  /**
+   * @openapi
+   * /api/pipelines:
+   *   get:
+   *     tags: [Pipelines]
+   *     summary: List all registered pipelines
+   *     responses:
+   *       200:
+   *         description: Array of AgentPipeline objects
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/AgentPipeline'
+   */
   // GET /api/pipelines
   router.get("/", (_req: Request, res: Response) => {
     res.json(manager.listPipelines());
   });
 
+  /**
+   * @openapi
+   * /api/pipelines:
+   *   post:
+   *     tags: [Pipelines]
+   *     summary: Register a new agent pipeline
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             $ref: '#/components/schemas/AgentPipeline'
+   *     responses:
+   *       201:
+   *         description: Pipeline registered successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 pipeline:
+   *                   $ref: '#/components/schemas/AgentPipeline'
+   *       400:
+   *         description: Validation error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
   // POST /api/pipelines
   router.post("/", (req: Request, res: Response) => {
     const pipeline = req.body as AgentPipeline;
@@ -35,6 +112,32 @@ export function createPipelineRouter(manager: McpServiceListManager): Router {
     res.status(201).json({ success: true, pipeline });
   });
 
+  /**
+   * @openapi
+   * /api/pipelines/{id}:
+   *   get:
+   *     tags: [Pipelines]
+   *     summary: Get a pipeline by ID
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: The pipeline object
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AgentPipeline'
+   *       404:
+   *         description: Pipeline not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
   // GET /api/pipelines/:id
   router.get("/:id", (req: Request, res: Response) => {
     const pipeline = manager.getPipeline(req.params["id"] as string);
@@ -45,6 +148,32 @@ export function createPipelineRouter(manager: McpServiceListManager): Router {
     res.json(pipeline);
   });
 
+  /**
+   * @openapi
+   * /api/pipelines/{id}:
+   *   delete:
+   *     tags: [Pipelines]
+   *     summary: Unregister (delete) a pipeline
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Pipeline deleted
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/SuccessOk'
+   *       404:
+   *         description: Pipeline not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
   // DELETE /api/pipelines/:id
   router.delete("/:id", (req: Request, res: Response) => {
     const deleted = manager.unregisterPipeline(req.params["id"] as string);
@@ -55,6 +184,48 @@ export function createPipelineRouter(manager: McpServiceListManager): Router {
     res.json({ success: true });
   });
 
+  /**
+   * @openapi
+   * /api/pipelines/{id}/run:
+   *   post:
+   *     tags: [Pipelines]
+   *     summary: Execute a pipeline
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               initialInput:
+   *                 type: object
+   *                 description: Initial input data passed to the first step
+   *     responses:
+   *       200:
+   *         description: Pipeline run result
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 stepResults:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *       404:
+   *         description: Pipeline not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
   // POST /api/pipelines/:id/run
   router.post("/:id/run", async (req: Request, res: Response) => {
     const { initialInput } = req.body as {

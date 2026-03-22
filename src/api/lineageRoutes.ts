@@ -15,11 +15,42 @@ export function createLineageRoutes(manager: McpServiceListManager): Router {
   const exporter = new LineageExporter();
 
   /**
-   * GET /api/lineage
-   * Query params:
-   *   startTime?: ISO 8601
-   *   endTime?:   ISO 8601
-   *   format?:    "json" | "mermaid" | "dot"  (default: "json")
+   * @openapi
+   * /api/lineage:
+   *   get:
+   *     tags: [Lineage]
+   *     summary: Get the execution lineage graph
+   *     description: Returns the full lineage graph. Use the `format` parameter to get Mermaid or DOT output.
+   *     parameters:
+   *       - in: query
+   *         name: startTime
+   *         schema:
+   *           type: string
+   *           format: date-time
+   *         description: Filter start time (ISO 8601)
+   *       - in: query
+   *         name: endTime
+   *         schema:
+   *           type: string
+   *           format: date-time
+   *         description: Filter end time (ISO 8601)
+   *       - in: query
+   *         name: format
+   *         schema:
+   *           type: string
+   *           enum: [json, mermaid, dot]
+   *           default: json
+   *         description: Output format
+   *     responses:
+   *       200:
+   *         description: Lineage graph in the requested format
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *           text/plain:
+   *             schema:
+   *               type: string
    */
   router.get("/", (req: Request, res: Response) => {
     const { startTime, endTime, format = "json" } = req.query as Record<string, string | undefined>;
@@ -45,6 +76,31 @@ export function createLineageRoutes(manager: McpServiceListManager): Router {
   });
 
   /**
+   * @openapi
+   * /api/lineage/mermaid:
+   *   get:
+   *     tags: [Lineage]
+   *     summary: Get lineage graph as Mermaid flowchart text
+   *     parameters:
+   *       - in: query
+   *         name: startTime
+   *         schema:
+   *           type: string
+   *           format: date-time
+   *       - in: query
+   *         name: endTime
+   *         schema:
+   *           type: string
+   *           format: date-time
+   *     responses:
+   *       200:
+   *         description: Mermaid flowchart text
+   *         content:
+   *           text/plain:
+   *             schema:
+   *               type: string
+   */
+  /**
    * GET /api/lineage/mermaid
    * Query params:
    *   startTime?: ISO 8601
@@ -59,6 +115,33 @@ export function createLineageRoutes(manager: McpServiceListManager): Router {
     res.type("text/plain").send(mermaid);
   });
 
+  /**
+   * @openapi
+   * /api/lineage/summary:
+   *   get:
+   *     tags: [Lineage]
+   *     summary: Get summary statistics for the lineage graph
+   *     responses:
+   *       200:
+   *         description: Summary statistics
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 totalNodes:
+   *                   type: integer
+   *                 totalEdges:
+   *                   type: integer
+   *                 agentNodes:
+   *                   type: integer
+   *                 toolNodes:
+   *                   type: integer
+   *                 successRate:
+   *                   type: number
+   *                 timeRange:
+   *                   type: object
+   */
   /**
    * GET /api/lineage/summary
    * Response: { totalNodes, totalEdges, agentNodes, toolNodes, successRate, timeRange }

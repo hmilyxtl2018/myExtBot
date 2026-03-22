@@ -1,0 +1,2903 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "myExtBot API",
+    "version": "0.1.0",
+    "description": "REST API for myExtBot — an extensible multi-agent orchestration platform.\n\nAll endpoints under `/api/*` require an `x-api-key` header (set `MYEXTBOT_API_KEY` env var, default: `dev-key`).\n\nInteractive docs: `/api-docs` · Raw spec: `/api-docs/json`"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "SuccessOk": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "ServiceHealthRecord": {
+        "type": "object",
+        "properties": {
+          "serviceName": {
+            "type": "string"
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy"
+            ]
+          },
+          "lastCheckedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consecutiveFailures": {
+            "type": "integer"
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalCalls": {
+            "type": "integer"
+          },
+          "totalSuccesses": {
+            "type": "integer"
+          },
+          "successRate": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "PipelineStep": {
+        "type": "object",
+        "required": [
+          "agentId",
+          "toolName"
+        ],
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "object"
+          }
+        }
+      },
+      "AgentPipeline": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PipelineStep"
+            }
+          }
+        }
+      },
+      "AgentSla": {
+        "type": "object",
+        "properties": {
+          "maxCostPerCall": {
+            "type": "number"
+          },
+          "maxCallsPerMinute": {
+            "type": "integer"
+          },
+          "allowedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blockedTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AgentContract": {
+        "type": "object",
+        "required": [
+          "agentId",
+          "sla"
+        ],
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "sla": {
+            "$ref": "#/components/schemas/AgentSla"
+          }
+        }
+      },
+      "PluginSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "installedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "Scene": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "serviceNames"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "serviceNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AgentProfile": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "sceneId": {
+            "type": "string"
+          },
+          "allowedServices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "canDelegateTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "primarySkill": {
+            "type": "string"
+          },
+          "secondarySkills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "systemPrompt": {
+            "type": "string"
+          },
+          "intents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "responseStyle": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "System and service health"
+    },
+    {
+      "name": "Services",
+      "description": "Manage MCP services"
+    },
+    {
+      "name": "Tools",
+      "description": "Tool definitions and dispatch"
+    },
+    {
+      "name": "Scenes",
+      "description": "Scene management"
+    },
+    {
+      "name": "Scene Triggers",
+      "description": "Automatic scene detection"
+    },
+    {
+      "name": "Agents",
+      "description": "Agent registration and routing"
+    },
+    {
+      "name": "Delegation",
+      "description": "Inter-agent delegation and logs"
+    },
+    {
+      "name": "Plugins",
+      "description": "Plugin marketplace"
+    },
+    {
+      "name": "Pipelines",
+      "description": "Agent pipeline orchestration"
+    },
+    {
+      "name": "Costs",
+      "description": "Cost tracking and reporting"
+    },
+    {
+      "name": "Lineage",
+      "description": "Execution lineage graph"
+    },
+    {
+      "name": "Contracts",
+      "description": "Agent SLA contracts"
+    },
+    {
+      "name": "Lifecycle",
+      "description": "Agent lifecycle management"
+    },
+    {
+      "name": "Security",
+      "description": "Audit log"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Get health records for all services",
+        "description": "Returns an array of ServiceHealthRecord for every registered service.",
+        "responses": {
+          "200": {
+            "description": "Array of service health records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceHealthRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/{serviceName}": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Get health record for a single service",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "serviceName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Registered service name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service health record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceHealthRecord"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/{serviceName}/reset": {
+      "post": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Reset service health to \"healthy\"",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "serviceName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Registered service name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reset successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "record": {
+                      "$ref": "#/components/schemas/ServiceHealthRecord"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/statuses": {
+      "get": {
+        "tags": [
+          "Lifecycle"
+        ],
+        "summary": "Get current status of all agents",
+        "responses": {
+          "200": {
+            "description": "Map of agentId to AgentStatus",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "enum": [
+                      "initializing",
+                      "active",
+                      "busy",
+                      "sleeping",
+                      "retired"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/lifecycle/all": {
+      "get": {
+        "tags": [
+          "Lifecycle"
+        ],
+        "summary": "Get lifecycle history for all agents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lifecycle history records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/status": {
+      "get": {
+        "tags": [
+          "Lifecycle"
+        ],
+        "summary": "Get current lifecycle status of an agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Agent ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current status record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Lifecycle"
+        ],
+        "summary": "Transition an agent to a new lifecycle status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Agent ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "initializing",
+                      "active",
+                      "busy",
+                      "sleeping",
+                      "retired"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transition successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "record": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid status or transition error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/lifecycle": {
+      "get": {
+        "tags": [
+          "Lifecycle"
+        ],
+        "summary": "Get lifecycle history for a specific agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Agent ID"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lifecycle history for the agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipelines": {
+      "get": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "List all registered pipelines",
+        "responses": {
+          "200": {
+            "description": "Array of AgentPipeline objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPipeline"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Register a new agent pipeline",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPipeline"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pipeline registered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "pipeline": {
+                      "$ref": "#/components/schemas/AgentPipeline"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipelines/{id}": {
+      "get": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Get a pipeline by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pipeline object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPipeline"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Unregister (delete) a pipeline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessOk"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pipelines/{id}/run": {
+      "post": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Execute a pipeline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "initialInput": {
+                    "type": "object",
+                    "description": "Initial input data passed to the first step"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pipeline run result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "stepResults": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/costs": {
+      "get": {
+        "tags": [
+          "Costs"
+        ],
+        "summary": "Query cost ledger entries",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agentId",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by agent ID"
+          },
+          {
+            "in": "query",
+            "name": "toolName",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by tool name"
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Filter by date (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cost entries and total count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/costs/summary": {
+      "get": {
+        "tags": [
+          "Costs"
+        ],
+        "summary": "Get cost summary report",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agentId",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "toolName",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated cost summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/costs/agents": {
+      "get": {
+        "tags": [
+          "Costs"
+        ],
+        "summary": "Get per-agent cost breakdown (sorted by cost descending)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Date to query (defaults to today)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of agent cost summaries sorted by cost descending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "agentId": {
+                        "type": "string"
+                      },
+                      "cost": {
+                        "type": "number"
+                      },
+                      "calls": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/costs/tools": {
+      "get": {
+        "tags": [
+          "Costs"
+        ],
+        "summary": "Get per-tool cost breakdown (sorted by cost descending)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Date to query (defaults to today)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of tool cost summaries sorted by cost descending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "toolName": {
+                        "type": "string"
+                      },
+                      "cost": {
+                        "type": "number"
+                      },
+                      "calls": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lineage": {
+      "get": {
+        "tags": [
+          "Lineage"
+        ],
+        "summary": "Get the execution lineage graph",
+        "description": "Returns the full lineage graph. Use the `format` parameter to get Mermaid or DOT output.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "startTime",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter start time (ISO 8601)"
+          },
+          {
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Filter end time (ISO 8601)"
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "mermaid",
+                "dot"
+              ],
+              "default": "json"
+            },
+            "description": "Output format"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lineage graph in the requested format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lineage/mermaid": {
+      "get": {
+        "tags": [
+          "Lineage"
+        ],
+        "summary": "Get lineage graph as Mermaid flowchart text",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "startTime",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "endTime",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mermaid flowchart text",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lineage/summary": {
+      "get": {
+        "tags": [
+          "Lineage"
+        ],
+        "summary": "Get summary statistics for the lineage graph",
+        "responses": {
+          "200": {
+            "description": "Summary statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalNodes": {
+                      "type": "integer"
+                    },
+                    "totalEdges": {
+                      "type": "integer"
+                    },
+                    "agentNodes": {
+                      "type": "integer"
+                    },
+                    "toolNodes": {
+                      "type": "integer"
+                    },
+                    "successRate": {
+                      "type": "number"
+                    },
+                    "timeRange": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contracts": {
+      "get": {
+        "tags": [
+          "Contracts"
+        ],
+        "summary": "List all agent contracts",
+        "responses": {
+          "200": {
+            "description": "Array of AgentContract objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentContract"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contracts/{agentId}": {
+      "get": {
+        "tags": [
+          "Contracts"
+        ],
+        "summary": "Get contract for a specific agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent contract",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContract"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Contract not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Contracts"
+        ],
+        "summary": "Register or replace a contract for an agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sla"
+                ],
+                "properties": {
+                  "sla": {
+                    "$ref": "#/components/schemas/AgentSla"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Contract registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContract"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing sla field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Contracts"
+        ],
+        "summary": "Remove a contract for an agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contract removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Contract not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contracts/{agentId}/check": {
+      "post": {
+        "tags": [
+          "Contracts"
+        ],
+        "summary": "Pre-check a tool call against an agent's contract (dry run)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "toolName"
+                ],
+                "properties": {
+                  "toolName": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pre-check result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "allowed": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing toolName",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Contract not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins": {
+      "get": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "List all plugins (PluginManager — legacy)",
+        "responses": {
+          "200": {
+            "description": "Array of plugin summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PluginSummary",
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/api/plugins/installed": {
+      "get": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "List installed plugins (PluginManager — legacy)",
+        "responses": {
+          "200": {
+            "description": "Array of installed plugin summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PluginSummary",
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/api/plugins/{id}": {
+      "get": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Get details for a single plugin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plugin summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Plugin not found"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/api/plugins/{id}/install": {
+      "post": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Install a plugin by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plugin installed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "plugin": {
+                      "$ref": "#/components/schemas/PluginSummary"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Plugin not found"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/api/plugins/{id}/uninstall": {
+      "delete": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Uninstall a plugin by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plugin uninstalled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Plugin not installed"
+          },
+          "500": {
+            "description": "Internal error"
+          }
+        }
+      }
+    },
+    "/api/scenes/auto-detect": {
+      "post": {
+        "tags": [
+          "Scene Triggers"
+        ],
+        "summary": "Evaluate all scene triggers against the given context",
+        "description": "Returns a ranked list of matching Scenes (highest score first).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "TriggerContext — arbitrary key/value pairs describing the current context"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Array of SceneTriggerResult ordered by score descending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sceneId": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scenes/best-match": {
+      "post": {
+        "tags": [
+          "Scene Triggers"
+        ],
+        "summary": "Get the single best-matching scene for the given context",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "TriggerContext — arbitrary key/value pairs describing the current context"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The best matching scene or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sceneId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "result": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/services": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "List all registered services",
+        "responses": {
+          "200": {
+            "description": "Array of service descriptors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/services/{name}/enable": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Enable a service by name",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessOk"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/services/{name}/disable": {
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Disable a service by name",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessOk"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tools": {
+      "get": {
+        "tags": [
+          "Tools"
+        ],
+        "summary": "List all tool definitions from enabled services",
+        "responses": {
+          "200": {
+            "description": "Array of tool definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "inputSchema": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dispatch": {
+      "post": {
+        "tags": [
+          "Tools"
+        ],
+        "summary": "Dispatch a tool call",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "toolName"
+                ],
+                "properties": {
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "arguments": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool call result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "result": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or execution error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scenes": {
+      "get": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "List all registered scenes",
+        "responses": {
+          "200": {
+            "description": "Array of Scene objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Scene"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Register a new scene",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Scene"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scene registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "scene": {
+                      "$ref": "#/components/schemas/Scene"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scenes/{id}": {
+      "delete": {
+        "tags": [
+          "Scenes"
+        ],
+        "summary": "Remove a scene by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scene removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List all registered agents",
+        "responses": {
+          "200": {
+            "description": "Array of AgentProfile objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentProfile"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Register a new agent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfile"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "agent": {
+                      "$ref": "#/components/schemas/AgentProfile"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/route": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Route a query to the most relevant agents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Natural language query to route"
+          },
+          {
+            "in": "query",
+            "name": "topN",
+            "schema": {
+              "type": "integer",
+              "default": 3
+            },
+            "description": "Number of top suggestions to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of agent routing suggestions (sorted by score)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "agentId": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/route/best": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get the single best-matching agent for a query",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Best agent ID and suggestion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "suggestion": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing query parameter"
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/tools": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get tool definitions available to a specific agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of tool definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get a specific agent by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfile"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Update an existing agent (partial update)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Partial AgentProfile fields to update"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "agent": {
+                      "$ref": "#/components/schemas/AgentProfile"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Remove an agent by ID",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dispatch-as/{agentId}": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Dispatch a tool call as a specific agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "toolName"
+                ],
+                "properties": {
+                  "toolName": {
+                    "type": "string"
+                  },
+                  "arguments": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool call result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "agentId": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or execution error"
+          }
+        }
+      }
+    },
+    "/api/agents/{fromAgentId}/delegate": {
+      "post": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "Delegate a tool call from one agent to another",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fromAgentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "toAgentId",
+                  "toolName"
+                ],
+                "properties": {
+                  "toAgentId": {
+                    "type": "string"
+                  },
+                  "toolName": {
+                    "type": "string"
+                  },
+                  "arguments": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delegation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "fromAgentId": {
+                      "type": "string"
+                    },
+                    "toAgentId": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or execution error"
+          }
+        }
+      }
+    },
+    "/api/delegation-log": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "Query delegation log entries",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Date to query (YYYY-MM-DD, defaults to today)"
+          },
+          {
+            "in": "query",
+            "name": "agentId",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by fromAgentId or toAgentId"
+          },
+          {
+            "in": "query",
+            "name": "toolName",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "success",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delegation log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "date": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/delegation-log/dates": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "List all dates for which delegation log files exist",
+        "responses": {
+          "200": {
+            "description": "Available dates in descending order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dates": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "date"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/delegation-log/summary": {
+      "get": {
+        "tags": [
+          "Delegation"
+        ],
+        "summary": "Get aggregated delegation statistics for a date",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Date to summarise (defaults to today)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delegation summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalCalls": {
+                      "type": "integer"
+                    },
+                    "successRate": {
+                      "type": "number"
+                    },
+                    "byAgent": {
+                      "type": "object"
+                    },
+                    "byTool": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/install": {
+      "post": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Install a plugin by ID (PluginManager — legacy)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "pluginId"
+                ],
+                "properties": {
+                  "pluginId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plugin installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "plugin": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or install error"
+          }
+        }
+      }
+    },
+    "/api/plugins/install-from-url": {
+      "post": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Install a plugin from a URL (PluginManager — legacy)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plugin installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or install error"
+          }
+        }
+      }
+    },
+    "/api/plugins/{pluginId}": {
+      "delete": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Uninstall a plugin (PluginManager — legacy)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pluginId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plugin uninstalled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessOk"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Uninstall error"
+          }
+        }
+      }
+    },
+    "/api/security/audit-log": {
+      "get": {
+        "tags": [
+          "Security"
+        ],
+        "summary": "Get in-memory audit log entries",
+        "responses": {
+          "200": {
+            "description": "Array of audit log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "integer"
+                      },
+                      "detail": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Basic health check (no auth required)",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -15,6 +15,37 @@ import { PluginManifest, PluginSummary } from "../types";
  *   POST   /api/plugins/:id/install  — install a plugin
  *   DELETE /api/plugins/:id/uninstall — uninstall a plugin
  */
+
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     PluginSummary:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *         name:
+ *           type: string
+ *         version:
+ *           type: string
+ *         author:
+ *           type: string
+ *         description:
+ *           type: string
+ *         category:
+ *           type: string
+ *         installed:
+ *           type: boolean
+ *         installedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         tools:
+ *           type: array
+ *           items:
+ *             type: object
+ */
 export function createPluginRoutes(
   _manager: McpServiceListManager,
   installer: PluginInstaller,
@@ -44,6 +75,24 @@ export function createPluginRoutes(
   }
 
   /**
+   * @openapi
+   * /api/plugins:
+   *   get:
+   *     tags: [Plugins]
+   *     summary: List all marketplace plugins with installation status
+   *     responses:
+   *       200:
+   *         description: Array of plugin summaries
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/PluginSummary'
+   *       500:
+   *         description: Internal error
+   */
+  /**
    * GET /api/plugins
    * Returns all marketplace plugins with their installation status.
    */
@@ -64,6 +113,24 @@ export function createPluginRoutes(
   });
 
   /**
+   * @openapi
+   * /api/plugins/installed:
+   *   get:
+   *     tags: [Plugins]
+   *     summary: List only installed plugins
+   *     responses:
+   *       200:
+   *         description: Array of installed plugin summaries
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/PluginSummary'
+   *       500:
+   *         description: Internal error
+   */
+  /**
    * GET /api/plugins/installed
    * Returns only the currently installed plugins.
    */
@@ -80,6 +147,30 @@ export function createPluginRoutes(
     }
   });
 
+  /**
+   * @openapi
+   * /api/plugins/{id}:
+   *   get:
+   *     tags: [Plugins]
+   *     summary: Get details for a single plugin
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Plugin summary
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/PluginSummary'
+   *       404:
+   *         description: Plugin not found
+   *       500:
+   *         description: Internal error
+   */
   /**
    * GET /api/plugins/:id
    * Returns details for a single plugin (marketplace or installed).
@@ -109,6 +200,35 @@ export function createPluginRoutes(
     }
   });
 
+  /**
+   * @openapi
+   * /api/plugins/{id}/install:
+   *   post:
+   *     tags: [Plugins]
+   *     summary: Install a plugin by ID
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Plugin installed successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 plugin:
+   *                   $ref: '#/components/schemas/PluginSummary'
+   *       404:
+   *         description: Plugin not found
+   *       500:
+   *         description: Internal error
+   */
   /**
    * POST /api/plugins/:id/install
    * Installs the plugin with the given ID.
@@ -141,6 +261,33 @@ export function createPluginRoutes(
     }
   });
 
+  /**
+   * @openapi
+   * /api/plugins/{id}/uninstall:
+   *   delete:
+   *     tags: [Plugins]
+   *     summary: Uninstall a plugin by ID
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Plugin uninstalled successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *       404:
+   *         description: Plugin not installed
+   *       500:
+   *         description: Internal error
+   */
   /**
    * DELETE /api/plugins/:id/uninstall
    * Uninstalls the plugin with the given ID.
