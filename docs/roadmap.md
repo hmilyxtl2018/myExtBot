@@ -75,11 +75,15 @@ This document tracks what has been delivered, what is in progress, and what come
 - Mandatory human-approval gate for high-risk tools (configurable via `guardrails.requireApproval`).
 - Integrate as middleware before every `dispatch()` / `dispatchAs()` call.
 
-### 4.4 K-DB RAG Integration
+### 4.4 K-DB RAG Integration ✅ Done (#58)
 
-- Add a vector-similarity path to `KnowledgeDbStore.search()` (e.g. via `sqlite-vss` or an external embedding service).
-- `lookupSimilar()` returns semantically relevant memories, not just keyword matches.
-- Optional hybrid search: keyword + vector, with configurable weight.
+- Added `embedding` column (TEXT/JSON) to `knowledge_entries` with automatic schema migration.
+- New `EmbeddingProvider` interface + `SimpleEmbeddingProvider` (deterministic, no API key) + `OpenAIEmbeddingProvider` skeleton.
+- `vectorUtils.ts` — `cosineSimilarity()` and `normalizeVector()` utilities.
+- `KnowledgeDbStore.insertWithEmbedding()` and `searchSemantic()` — cosine similarity computed in JS for portability; for large-scale deployments use `sqlite-vss` or an external vector DB.
+- `MemoryAdapter.lookupSimilar()` uses semantic search when a provider is configured, falls back to keyword search otherwise (fully backwards compatible).
+- New `MemoryAdapter.lookupHybrid()` blends keyword + semantic results with configurable weights.
+- Both in-memory and SQLite paths support semantic search when a provider is injected.
 
 ### 4.5 AgentSpec Schema Versioning
 

@@ -452,4 +452,127 @@ describe("KnowledgeDbStore", () => {
       expect(store.purgeRetired()).toBe(0);
     });
   });
+
+  // ── embedding / semantic search ───────────────────────────────────────────
+
+  describe("insertWithEmbedding + searchSemantic", () => {
+    it("insertWithEmbedding stores an entry retrievable by searchSemantic", () => {
+      const entry = makeEntry("agent1", "TypeScript generics", 0.9);
+      const embedding = [1, 0, 0, 0];
+      store.insertWithEmbedding("agent1", entry, embedding);
+
+      const results = store.searchSemantic("agent1", [1, 0, 0, 0], 5);
+      expect(results).toHaveLength(1);
+      expect(results[0].content).toBe("TypeScript generics");
+    });
+
+    it("searchSemantic returns empty when no entries have embeddings", () => {
+      store.insert("agent1", makeEntry("agent1", "no embedding", 0.9));
+      const results = store.searchSemantic("agent1", [1, 0], 5);
+      expect(results).toHaveLength(0);
+    });
+
+    it("searchSemantic ranks closer vectors higher", () => {
+      const close = makeEntry("agent1", "close entry", 0.9);
+      const far = makeEntry("agent1", "far entry", 0.9);
+
+      // close entry is similar to the query [1, 0]; far entry is orthogonal
+      store.insertWithEmbedding("agent1", close, [1, 0]);
+      store.insertWithEmbedding("agent1", far, [0, 1]);
+
+      const results = store.searchSemantic("agent1", [1, 0], 5);
+      expect(results[0].content).toBe("close entry");
+      expect(results[1].content).toBe("far entry");
+    });
+
+    it("searchSemantic respects topK limit", () => {
+      for (let i = 0; i < 5; i++) {
+        store.insertWithEmbedding(
+          "agent1",
+          makeEntry("agent1", `entry ${i}`, 0.9),
+          [i + 1, 0],
+        );
+      }
+      const results = store.searchSemantic("agent1", [1, 0], 3);
+      expect(results).toHaveLength(3);
+    });
+
+    it("searchSemantic excludes retired entries", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const expiredEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-exp",
+        agentId: "agent1",
+        content: "retired entry",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: past,
+      };
+      store.insertWithEmbedding("agent1", expiredEntry, [1, 0]);
+      store.deleteExpired("agent1");
+
+      const results = store.searchSemantic("agent1", [1, 0], 5);
+      expect(results).toHaveLength(0);
+    });
+
+    it("searchSemantic excludes expired entries", () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const expiredEntry: import("../MemoryAdapter").KnowledgeEntry = {
+        id: "kdb-agent1-exp",
+        agentId: "agent1",
+        content: "expired embedding entry",
+        confidence: 0.9,
+        createdAt: new Date().toISOString(),
+        expiresAt: past,
+      };
+      store.insertWithEmbedding("agent1", expiredEntry, [1, 0]);
+      // Do NOT call deleteExpired — entry is not retired but is expired
+
+      const results = store.searchSemantic("agent1", [1, 0], 5);
+      expect(results).toHaveLength(0);
+    });
+
+    it("insert() optionally accepts an embedding (same as insertWithEmbedding)", () => {
+      const entry = makeEntry("agent1", "entry via insert", 0.9);
+      store.insert("agent1", entry, [1, 0, 0]);
+
+      const results = store.searchSemantic("agent1", [1, 0, 0], 5);
+      expect(results).toHaveLength(1);
+      expect(results[0].content).toBe("entry via insert");
+    });
+
+    it("insert() without embedding is backwards compatible (entry absent from searchSemantic)", () => {
+      store.insert("agent1", makeEntry("agent1", "legacy entry", 0.9));
+      const results = store.searchSemantic("agent1", [1, 0], 5);
+      expect(results).toHaveLength(0);
+    });
+
+    it("searchSemantic is isolated per agent", () => {
+      store.insertWithEmbedding("agent1", makeEntry("agent1", "a1 content", 0.9), [1, 0]);
+      store.insertWithEmbedding("agent2", makeEntry("agent2", "a2 content", 0.9), [1, 0]);
+
+      expect(store.searchSemantic("agent1", [1, 0], 5).every((r) => r.agentId === "agent1")).toBe(true);
+      expect(store.searchSemantic("agent2", [1, 0], 5).every((r) => r.agentId === "agent2")).toBe(true);
+    });
+  });
+
+  // ── searchSemanticWithScores ──────────────────────────────────────────────
+
+  describe("searchSemanticWithScores", () => {
+    it("returns entries with their cosine-similarity scores", () => {
+      store.insertWithEmbedding("agent1", makeEntry("agent1", "entry A", 0.9), [1, 0]);
+      store.insertWithEmbedding("agent1", makeEntry("agent1", "entry B", 0.9), [0, 1]);
+
+      const results = store.searchSemanticWithScores("agent1", [1, 0], 5);
+      expect(results).toHaveLength(2);
+      expect(results[0].score).toBeCloseTo(1.0);
+      expect(results[0].entry.content).toBe("entry A");
+      expect(results[1].score).toBeCloseTo(0.0);
+    });
+
+    it("returns empty when no entries have embeddings", () => {
+      store.insert("agent1", makeEntry("agent1", "no emb", 0.9));
+      expect(store.searchSemanticWithScores("agent1", [1, 0], 5)).toHaveLength(0);
+    });
+  });
 });
+
