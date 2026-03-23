@@ -137,3 +137,117 @@ Next similar task is handled faster, with higher confidence
 ```
 
 Over time the digital twin builds a personalised library of verified, user-validated procedures. The agent becomes progressively more accurate on the tasks the user performs repeatedly, while retaining full auditability and user control at every step.
+
+---
+
+## Agent Auto-Retire & Memory Cleanup
+
+K-DB entries have a configurable lifetime controlled by the `autoRetireAfterMinutes` setting in the agent's `memory.knowledgeDb` configuration. This section documents the full lifecycle from creation to permanent removal.
+
+### `autoRetireAfterMinutes` Configuration
+
+Set the `autoRetireAfterMinutes` property on an agent's `memory.knowledgeDb` to automatically expire entries after a given number of minutes:
+
+```typescript
+const agentSpec: AgentProfile = {
+  id: "my-agent",
+  name: "My Agent",
+  memory: {
+    knowledgeDb: {
+      enabled: true,
+      autoRetireAfterMinutes: 1440, // entries expire after 24 hours
+    },
+  },
+};
+```
+
+When a new K-DB entry is created for this agent, its `expiresAt` field is set to `createdAt + autoRetireAfterMinutes`. Entries without `expiresAt` never expire.
+
+---
+
+### Lazy Cleanup (In-Memory Path)
+
+When no `KnowledgeDbStore` (SQLite) is injected, `MemoryAdapter` uses an in-memory `Map`. Expired entries are lazily removed on every read or write operation:
+
+| Method | Cleanup triggered |
+|--------|------------------|
+| `extractTrace()` | `purgeExpiredInMemory(agentId)` before inserting |
+| `lookupSimilar()` | `purgeExpiredInMemory(agentId)` before searching |
+| `getKnowledgeDb()` | `purgeExpiredInMemory(agentId)` before returning |
+
+Entries where `expiresAt` is set and is in the past are removed from the Map. This ensures expired entries are invisible to queries without requiring a background process.
+
+---
+
+### Background Sweep (SQLite Path)
+
+For the SQLite-backed path, two complementary sweepers run in the background:
+
+#### 1. `MemoryAdapter` sweep (per-agent, agent-aware)
+
+`McpServiceListManager.startAutoRetireSweep(intervalMs?)` starts a sweep via `MemoryAdapter` that iterates over registered agents and calls `store.deleteExpired(agentId)` for each agent that has `autoRetireAfterMinutes` configured. Default interval: **5 minutes**.
+
+#### 2. `MemoryRetireSweeper` (global, automatic)
+
+`MemoryRetireSweeper` is automatically started by `McpServiceListManager` on construction. It runs independently of agent registration:
+
+- Calls `store.deleteExpired()` (no `agentId` — sweeps **all** agents) on each tick.
+- Calls `store.purgeRetired(purgeRetiredOlderThanDays)` to permanently delete entries retired more than the configured threshold ago (default: **7 days**).
+- Default interval: **60 seconds** (1 minute).
+- Stopped automatically in `McpServiceListManager.close()`.
+
+```typescript
+// MemoryRetireSweeper is started automatically, but can also be used standalone:
+import { MemoryRetireSweeper } from "./core/MemoryRetireSweeper";
+
+const sweeper = new MemoryRetireSweeper(
+  store,           // KnowledgeDbStore instance
+  60_000,          // interval in ms (default: 60 000)
+  7,               // purge entries retired > N days ago (default: 7)
+);
+sweeper.start();
+// ...later:
+sweeper.stop();
+```
+
+---
+
+### Soft-Delete vs. Permanent Purge Lifecycle
+
+K-DB cleanup uses a two-phase approach to balance resource efficiency with auditability:
+
+```
+Entry created  →  expiresAt reached
+                       │
+                       ▼
+              Soft-delete (retiredAt set)
+              Entry invisible to query()
+              Entry visible to listRetired()
+                       │
+                  7 days later
+                       │
+                       ▼
+              Permanent purge (purgeRetired)
+              Row permanently deleted
+```
+
+| Phase | Method | Effect |
+|-------|--------|--------|
+| **Soft-delete** | `deleteExpired(agentId?)` | Sets `retiredAt` = now; entry hidden from `query()` |
+| **Audit access** | `listRetired(agentId?)` | Returns all soft-deleted entries for review |
+| **Permanent purge** | `purgeRetired(olderThanDays?)` | Permanently removes retired entries older than the threshold |
+
+This means:
+- Expired entries are **immediately invisible** to searches and `query()` results.
+- Retired entries are **preserved for 7 days** (by default) to allow audit, debugging, or recovery.
+- After the retention window, entries are **permanently deleted** to prevent unbounded database growth.
+
+---
+
+### Ensuring No Unbounded Memory Growth
+
+The combination of lazy cleanup (in-memory path) and background sweep (SQLite path) ensures:
+
+- **In-memory path**: Expired entries are removed on every access — no stale data accumulates.
+- **SQLite path**: Expired entries are soft-deleted within 1 minute by `MemoryRetireSweeper` and permanently purged after 7 days.
+- **Search results**: Both `query()` (SQLite) and `lookupSimilar()` (both paths) always exclude expired and retired entries.

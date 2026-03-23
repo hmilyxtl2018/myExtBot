@@ -38,6 +38,7 @@ import { LineageExporter } from "./LineageExporter";
 import { validateAgentSpec } from "./AgentSpecValidator";
 import { KnowledgeDbStore } from "./KnowledgeDbStore";
 import { MemoryAdapter } from "./MemoryAdapter";
+import { MemoryRetireSweeper } from "./MemoryRetireSweeper";
 import { GuardrailsEnforcer, withGuardrails } from "./GuardrailsEnforcer";
 
 /**
@@ -91,6 +92,9 @@ export class McpServiceListManager {
   /** Pillar 9: Memory adapter — wraps knowledgeStore for K-DB operations. */
   memoryAdapter: MemoryAdapter;
 
+  /** Pillar 9: Background sweeper — periodically purges expired/retired K-DB entries. */
+  private retireSweeper: MemoryRetireSweeper;
+
   constructor() {
     /**
      * Determine the SQLite path from the environment variable
@@ -99,6 +103,8 @@ export class McpServiceListManager {
     const rawPath = process.env["KNOWLEDGE_DB_PATH"] ?? "./data/knowledge.db";
     this.knowledgeStore.init(rawPath);
     this.memoryAdapter = new MemoryAdapter(this, this.knowledgeStore);
+    this.retireSweeper = new MemoryRetireSweeper(this.knowledgeStore);
+    this.retireSweeper.start();
 
     // Close the DB gracefully on process exit.
     const closeStore = () => { this.knowledgeStore.close(); };
@@ -110,8 +116,14 @@ export class McpServiceListManager {
   /**
    * Explicitly close the underlying KnowledgeDbStore connection.
    * Call this when you control the lifecycle and do not rely on process exit.
+   *
+   * Shutdown order: stop both sweep timers first (they are independent), then
+   * close the DB so no in-flight sweep can race against a closed connection.
    */
   close(): void {
+    // Stop both sweepers before closing the DB — order between the two sweepers
+    // does not matter since they are independent timers.
+    this.retireSweeper.stop();
     this.memoryAdapter.stopAutoRetireSweep();
     this.knowledgeStore.close();
   }
