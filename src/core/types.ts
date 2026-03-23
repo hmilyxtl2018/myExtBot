@@ -850,8 +850,17 @@ export const CURRENT_SPEC_VERSION: SpecVersion = "1.0";
 export interface AgentSpec extends AgentProfile {
   // Pillars 1-6 are inherited from AgentProfile
 
-  /** Schema version of this AgentSpec (e.g. "1.0"). Defaults to "1.0" when omitted. */
-  specVersion?: string;
+  /**
+   * Schema version of this AgentSpec (e.g. "1.0"). Defaults to "1.0" when omitted.
+   *
+   * Versioning contract:
+   * - Known supported versions receive full autocomplete and type-checking via `SpecVersion`.
+   * - Unknown future versions (forward-compatibility) are still accepted at the type level
+   *   via the `string & {}` intersection, but will be rejected at runtime by the validator.
+   * - Use `migrateAgentSpec()` to upgrade an older spec to the current version before
+   *   passing it to `validateAgentSpec()`.
+   */
+  specVersion?: SpecVersion | (string & {});
 
   // Pillar 1 addition — semantic version string (e.g. "1.2.3")
   version?: string;
