@@ -1640,3 +1640,61 @@ Aggregated statistics for a given date (defaults to today).
 ```bash
 curl "http://localhost:3000/api/delegation-log/summary?date=2024-03-12"
 ```
+
+---
+
+## Playwright Browser Automation (PlaywrightService)
+
+`PlaywrightService` integrates the [Microsoft Playwright MCP server](https://github.com/microsoft/playwright-mcp) (`@playwright/mcp`) into myExtBot as a first-class `McpService`. It enables AI agents (e.g., `browser-bot`) to control real browsers via structured accessibility snapshots — no vision model or screenshots required.
+
+### Setup
+
+1. **Start the Playwright MCP server** in a separate terminal:
+
+   ```bash
+   npx @playwright/mcp@latest --port 8931
+   ```
+
+2. **Configure the URL** via environment variable:
+
+   ```bash
+   export PLAYWRIGHT_MCP_URL=http://localhost:8931
+   ```
+
+When `PLAYWRIGHT_MCP_URL` is not set, `PlaywrightService` returns descriptive stub responses so the rest of the application works normally without a running browser.
+
+### Available Tools
+
+| Tool Name | Description |
+|---|---|
+| `browser_navigate` | Navigate the browser to a URL |
+| `browser_click` | Click an element by CSS selector or description |
+| `browser_type` | Type text into an input field |
+| `browser_snapshot` | Get structured accessibility snapshot of the current page |
+| `browser_screenshot` | Take a screenshot (returns base64 PNG) |
+| `browser_go_back` | Navigate browser back |
+| `browser_go_forward` | Navigate browser forward |
+| `browser_close` | Close the current browser tab/page |
+
+### Usage Example
+
+Once `PLAYWRIGHT_MCP_URL` is set, you can call browser tools via the REST API:
+
+```bash
+# Navigate to a URL
+curl -X POST http://localhost:3000/api/tools/call \
+  -H "Content-Type: application/json" \
+  -d '{"toolName": "browser_navigate", "arguments": {"url": "https://example.com"}}'
+
+# Take an accessibility snapshot
+curl -X POST http://localhost:3000/api/tools/call \
+  -H "Content-Type: application/json" \
+  -d '{"toolName": "browser_snapshot", "arguments": {}}'
+```
+
+The `browser-bot` agent is pre-registered and routes intents such as `browser-automation`, `web-scraping`, `e2e-testing`, `click`, `navigate`, and `screenshot` to `PlaywrightService`.
+
+```bash
+# Route a browser task to browser-bot
+curl "http://localhost:3000/api/agents/route/best?query=navigate+to+github.com+and+take+a+screenshot"
+```
