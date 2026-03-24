@@ -2,6 +2,7 @@ import { McpServiceListManager } from "./core/McpServiceListManager";
 import { SearchService } from "./services/SearchService";
 import { CalendarService } from "./services/CalendarService";
 import { CodeRunnerService } from "./services/CodeRunnerService";
+import { PlaywrightService } from "./services/PlaywrightService";
 import { createServer } from "./server";
 
 async function main(): Promise<void> {
@@ -14,6 +15,7 @@ async function main(): Promise<void> {
   manager.register(new SearchService());
   manager.register(new CalendarService());
   manager.register(new CodeRunnerService());
+  manager.register(new PlaywrightService());
 
   // ── 2. Start the HTTP server ──────────────────────────────────────────────────
   createServer(manager);
@@ -41,7 +43,13 @@ async function main(): Promise<void> {
     id: "full",
     name: "Full Access",
     description: "All services — for power users.",
-    serviceNames: ["SearchService", "CalendarService", "CodeRunnerService"],
+    serviceNames: ["SearchService", "CalendarService", "CodeRunnerService", "PlaywrightService"],
+  });
+  manager.registerScene({
+    id: "browser-automation",
+    name: "Browser Automation",
+    description: "AI-driven browser automation and web interaction tasks.",
+    serviceNames: ["PlaywrightService"],
   });
 
   // ── 4. Register Agents with 9-Pillar Specs ────────────────────────────────────
@@ -205,6 +213,33 @@ async function main(): Promise<void> {
       lineageTracking: { enabled: true, maxDepth: 10, includeArguments: true },
       healthMonitoring: { enabled: true },
     },
+  });
+  manager.registerAgent({
+    id: "browser-bot",
+    name: "Browser Bot",
+    description:
+      "Controls a real browser via Playwright MCP for web automation, scraping, and E2E testing.",
+    sceneId: "browser-automation",
+    canDelegateTo: ["research-bot"],
+    systemPrompt:
+      "你是一个专业的浏览器自动化助手。你可以控制真实浏览器完成网页操作、数据抓取和自动化测试任务。始终优先使用 browser_snapshot 获取页面结构，再执行操作。",
+    intents: ["browser-automation", "web-scraping", "e2e-testing", "click", "navigate", "screenshot"],
+    domains: ["automation", "testing", "browser"],
+    languages: ["zh-CN", "en-US"],
+    responseStyle: "markdown",
+    primarySkill: "Browser automation via Playwright MCP",
+    capabilities: [
+      "Navigate to any URL",
+      "Click elements on a page",
+      "Type text into inputs",
+      "Take screenshots",
+      "Get page accessibility snapshots",
+      "Run end-to-end browser workflows",
+    ],
+    constraints: [
+      "Requires PLAYWRIGHT_MCP_URL environment variable for real browser control",
+      "Cannot access browser sessions of other users",
+    ],
   });
 
   // ── 5. Show registered agents ─────────────────────────────────────────────────
